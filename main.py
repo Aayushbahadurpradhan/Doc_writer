@@ -224,6 +224,12 @@ def scan_frontend_pages(frontend_root):
         return []
 
     print("  * {} pages detected".format(len(pages)))
+    
+    # DEBUG: Check component file resolution
+    found_files = sum(1 for p in pages if p.get("file"))
+    missing_files = len(pages) - found_files
+    if missing_files > 0:
+        print("  ! {} pages missing component files (will try to find them)".format(missing_files))
 
     for page in pages:
         comp_file = page.get("file")
@@ -236,11 +242,14 @@ def scan_frontend_pages(frontend_root):
                 pass
 
         page["api_calls"]        = _trace_api_calls(content, comp_file or "")
-        page["children"]         = _extract_imports(content)
+        page["children"]         = _extract_components(content)
         page["layout"]           = _extract_layout(content)
         page["state_management"] = _detect_state(content)
+        page["data_keys"]        = _extract_data_keys(content)
+        page["route_params"]     = _extract_route_params(page.get("path", ""))
+        page["code_snippet"]     = content[:3000] if content else ""
         page["unknowns"]         = (
-            ["Component file not found: " + str(comp_file)]
+            ["Component file not found"]
             if not comp_file or not os.path.exists(comp_file or "")
             else []
         )
@@ -278,46 +287,125 @@ def _find_file(name, root):
     return None
 
 
+def _build_import_map(content: str, router_dir: str, root: str) -> dict:
+    """Extract import statements and map variable name -> file path."""
+    imports = {}
+    
+    # Match: import ComponentName from "./path/to/Component.vue"
+    # Handles multi-line imports with whitespace flexibility
+    pattern = r'import\s+(\w+)\s+from\s+["\']([^"\']+)["\']'
+    for m in re.finditer(pattern, content, re.DOTALL | re.MULTILINE):
+        var_name = m.group(1)
+        import_path = m.group(2).strip()  # Remove whitespace from path
+        
+        # Resolve relative import to absolute path
+        abs_path = os.path.normpath(os.path.join(router_dir, import_path))
+        
+        # Try with various extensions if not specified
+        if not os.path.exists(abs_path):
+            for ext in (".vue", ".jsx", ".tsx", ".js", ".ts"):
+                if os.path.exists(abs_path + ext):
+                    abs_path = abs_path + ext
+                    break
+        
+        if os.path.exists(abs_path):
+            imports[var_name] = abs_path
+    
+    return imports
+
+
 def _parse_router_file(root):
     pages = []
     skip  = {"node_modules", "dist", ".git"}
     for dp, dirs, files in os.walk(root):
         dirs[:] = [d for d in dirs if d not in skip]
         for fn in files:
-            if fn.lower() not in ("index.js", "index.ts", "router.js", "router.ts",
-                                   "routes.js", "routes.ts"):
+            fn_lower = fn.lower()
+            # Look for common router files and app entry points
+            if fn_lower not in (
+                "index.js", "index.ts", "router.js", "router.ts",
+                "routes.js", "routes.ts", "app.js", "app.ts",
+                "main.js", "main.ts", "application.js", "application.ts"
+            ):
                 continue
             fpath   = os.path.join(dp, fn)
             content = _read(fpath)
             if not any(x in content for x in
                        ("createRouter", "vue-router", "BrowserRouter", "Route")):
                 continue
-            # Vue Router
-            for m in re.finditer(
-                r"path\s*:\s*['\"`]([^'\"`]+)['\"`].*?"
-                r"(?:component\s*:\s*(?:.*?import\s*\(\s*['\"`]([^'\"`]+)['\"`]\s*\)"
-                r"|([A-Za-z]\w*)))?",
-                content, re.DOTALL,
-            ):
+            
+            # Build import map for this file
+            imports = _build_import_map(content, os.path.dirname(fpath), root)
+            found_with_imports = 0
+            
+            # Vue Router – pattern 1: { path: "...", component: ComponentName }
+            ROUTE_STATIC = re.compile(
+                r"\{\s*path\s*:\s*['\"`]([^'\"`]+)['\"`]\s*,"
+                r"[\s\S]{0,100}?component\s*:\s*([A-Za-z]\w*)",
+            )
+            # Vue Router – pattern 2: lazy { path: "...", component: () => import('...') }
+            ROUTE_LAZY = re.compile(
+                r"\{\s*path\s*:\s*['\"`]([^'\"`]+)['\"`]"
+                r"[\s\S]{0,200}?component\s*:\s*[^,\n]*?import\s*\(\s*['\"`]([^'\"`]+)['\"`]\s*\)",
+            )
+            seen_paths = set()
+            
+            for m in ROUTE_STATIC.finditer(content):
                 path = m.group(1)
-                comp = m.group(2) or m.group(3) or ""
-                if not path or path in ("*", "/:pathMatch(.*)", "/:catchAll(.*)"):
+                comp = m.group(2)
+                
+                if not path or not path.startswith("/"):
                     continue
-                comp_file = None
-                if comp:
-                    comp_abs = os.path.normpath(os.path.join(os.path.dirname(fpath), comp))
-                    for ext in ("", ".vue", ".jsx", ".tsx", ".js", ".ts"):
-                        if os.path.exists(comp_abs + ext):
-                            comp_file = comp_abs + ext
-                            break
-                    if not comp_file:
-                        comp_file = _find_file(os.path.basename(comp), root)
+                if "+" in path or "String" in path or "(" in path or ")" in path:
+                    continue
+                if path in ("*", "/:pathMatch(.*)", "/:catchAll(.**)"):
+                    continue
+                
+                comp_file = imports.get(comp)
+                if comp_file:
+                    found_with_imports += 1
+                elif comp:
+                    comp_file = _find_file(comp, root)
+                
+                dedup_key = path + "|" + comp
+                if dedup_key in seen_paths:
+                    continue
+                seen_paths.add(dedup_key)
+                
                 pages.append({
                     "path":      path,
-                    "component": os.path.basename(comp) if comp else "UNKNOWN",
+                    "component": comp if comp else "UNKNOWN",
                     "file":      comp_file,
                     "source":    fn,
                 })
+            
+            for m in ROUTE_LAZY.finditer(content):
+                path = m.group(1)
+                comp_path = m.group(2)
+                
+                if not path or not path.startswith("/"):
+                    continue
+                if path in seen_paths:
+                    continue
+                
+                comp_abs = os.path.normpath(os.path.join(os.path.dirname(fpath), comp_path))
+                comp_file = None
+                for ext in ("", ".vue", ".jsx", ".tsx", ".js", ".ts"):
+                    if os.path.exists(comp_abs + ext):
+                        comp_file = comp_abs + ext
+                        break
+                
+                seen_paths.add(path)
+                pages.append({
+                    "path":      path,
+                    "component": os.path.basename(comp_path),
+                    "file":      comp_file,
+                    "source":    fn,
+                })
+            
+            if found_with_imports > 0:
+                print("  * Resolved {} components via import map".format(found_with_imports))
+            
             # React Router
             for m in re.finditer(r'path=["\']([^"\']+)["\'].*?element=\{<(\w+)', content):
                 comp = m.group(2)
@@ -467,23 +555,76 @@ def _trace_api_calls(content, filepath):
     return calls
 
 
-def _extract_imports(content):
-    return [
-        m.group(1)
-        for m in re.finditer(
-            r"import\s+(?:\{[^}]+\}|(\w+))\s+from\s*['\"`](\.[^'\"`]+)['\"`]",
-            content,
-        )
-        if m.group(1)
-    ][:20]
+def _extract_components(content):
+    """Extract child component names — imports AND Vue Options API components:{} block."""
+    children = []
+    seen = set()
+
+    # Local imports: import Foo from './...' or '../...'
+    for m in re.finditer(
+        r"import\s+(?:\{[^}]+\}|(\w+))\s+from\s*['\"`](\.{1,2}/[^'\"`]+)['\"`]",
+        content,
+    ):
+        name = m.group(1)
+        if name and name not in seen:
+            seen.add(name)
+            children.append(name)
+
+    # Vue Options API: components: { Foo, Bar }
+    m = re.search(r"components\s*:\s*\{([^}]+)\}", content, re.DOTALL)
+    if m:
+        for part in re.findall(r"([A-Z]\w+)", m.group(1)):
+            if part not in seen:
+                seen.add(part)
+                children.append(part)
+
+    # PascalCase tags used in template (custom components)
+    for tag in re.findall(r"<([A-Z][A-Za-z0-9]+)", content):
+        skip_prefixes = ("V", "B", "El", "A", "Nu")
+        if any(tag.startswith(p) for p in skip_prefixes):
+            continue
+        if tag not in seen:
+            seen.add(tag)
+            children.append(tag)
+
+    return children[:20]
 
 
 def _extract_layout(content):
-    m = re.search(r"<(\w*[Ll]ayout\w*)", content)
+    # Vue layout component tag
+    m = re.search(r"<([A-Za-z]*[Ll]ayout[A-Za-z]*)[\s/>]", content)
     if m:
         return m.group(1)
-    m = re.search(r"layout\s*:\s*['\"](\w+)['\"]", content)
-    return m.group(1) if m else "UNKNOWN"
+    # Nuxt/Vue3 layout property
+    m = re.search(r"layout\s*:\s*['\"`]([^'\"`]+)['\"`]", content)
+    if m:
+        return m.group(1)
+    # Blade @extends
+    m = re.search(r"@extends\s*\(['\"]([^'\"]+)['\"]\)", content)
+    if m:
+        return "Blade: " + m.group(1)
+    # Has breadcrumb nav — Vue 2 app layout
+    if "breadcrumb" in content.lower():
+        return "App shell (breadcrumb navigation)"
+    return "None"
+
+
+def _extract_data_keys(content):
+    """Extract Vue data() property names."""
+    keys = []
+    m = re.search(r"data\s*\(\s*\)\s*\{[\s\S]{0,300}?return\s*\{([^}]{0,600})", content)
+    if not m:
+        m = re.search(r"data\s*:\s*function\s*\(\s*\)\s*\{[\s\S]{0,300}?return\s*\{([^}]{0,600})", content)
+    if m:
+        for k in re.findall(r"([a-zA-Z_][\w]*)[\s]*:", m.group(1)):
+            if k not in ("true", "false", "null", "undefined") and not k.startswith("_"):
+                keys.append(k)
+    return keys[:15]
+
+
+def _extract_route_params(path):
+    """Extract URL parameter names from route path like /admin/:id."""
+    return re.findall(r":([a-zA-Z_]\w*)", path)
 
 
 def _detect_state(content):
@@ -492,8 +633,12 @@ def _detect_state(content):
         s.append("pinia")
     if "useSelector" in content or "useDispatch" in content:
         s.append("redux")
-    if "store.dispatch" in content or "mapState" in content:
+    if re.search(r"mapState|mapActions|mapGetters|mapMutations|store\.dispatch|store\.commit|\$store\.", content):
         s.append("vuex")
+    if re.search(r"data\s*\(\s*\)\s*\{", content) or re.search(r"data\s*:\s*function", content):
+        s.append("local data()")
+    if "useState" in content:
+        s.append("react state")
     return s
 
 

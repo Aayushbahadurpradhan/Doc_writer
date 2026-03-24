@@ -70,7 +70,7 @@ class DependencyGraph:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2)
-        print(f"✅ dependency_graph.json → {path}")
+        print(f"[OK] dependency_graph.json -> {path}")
 
     def save_mermaid(self, path: str) -> None:
         """
@@ -90,7 +90,7 @@ class DependencyGraph:
                 lines.append(f'    {frm}["{link["from"]}"] -->|{label}| {to}["{link["to"]}"]')
         with open(path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
-        print(f"✅ dependency_graph.mermaid → {path}")
+        print(f"[OK] dependency_graph.mermaid -> {path}")
 
     # ─── Summary ─────────────────────────────────────────────────────────────
 
