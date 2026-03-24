@@ -363,7 +363,7 @@ def detect_apis(project_root: str) -> List[dict]:
             if "Route::" in content:
                 all_routes.extend(_parse_routes_from_file(content, rf))
 
-    print(f"  📋 {len(all_routes)} routes extracted from route files")
+    print("[*] {} routes extracted from route files".format(len(all_routes)))
 
     # De-duplicate
     seen: dict = {}
@@ -411,7 +411,7 @@ def save_routes_json(routes: List[dict], output_path: str) -> None:
     clean = [{k: v for k, v in r.items() if k != "body_snippet"} for r in routes]
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(clean, f, indent=2)
-    print(f"  ✅ routes.json → {output_path}")
+    print(f"  [OK] routes.json -> {output_path}")
 
 
 if __name__ == "__main__":

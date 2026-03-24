@@ -5,10 +5,13 @@ Groups routes by domain auto-detected from URL path.
 No hardcoded domain names - works with any project.
 
 Output per domain:
-  docs/backend/{domain}/api.md
-  docs/backend/{domain}/business.md
-  docs/backend/{domain}/legacy_query.sql
-  docs/backend/index.md
+  docs/backend/{domain}/api.md              - Static API reference
+  docs/backend/{domain}/responses.md        - Response schemas & examples
+  docs/backend/{domain}/business.md         - AI-generated business logic
+  docs/backend/{domain}/legacy_query.sql    - AI-generated SQL audit
+  docs/backend/index.md                     - Master index
+
+Protected output: Frontend runs will NOT overwrite backend docs.
 """
 
 import json
@@ -21,7 +24,6 @@ from typing import Dict, List, Set
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from shared.ai_client import AIConfig, call_ai
-
 
 # =============================================================================
 # DOMAIN DETECTION
@@ -502,6 +504,22 @@ def generate_all_docs(
         _write_api_md(domain_routes, os.path.join(ddir, "api.md"))
         print("    api.md")
 
+        # responses.md -- API response schemas (uses AI to extract response details)
+        if use_ai:
+            _write_responses_md(
+                domain_routes,
+                os.path.join(ddir, "responses.md"),
+                config=config,
+                no_ai=no_ai,
+            )
+            print("    responses.md (with AI enhancement)")
+        else:
+            _write_responses_md_static(
+                domain_routes,
+                os.path.join(ddir, "responses.md"),
+            )
+            print("    responses.md (static)")
+
         # business.md
         routes_for_biz = domain_routes if force else pending_biz
         if routes_for_biz:
@@ -574,6 +592,198 @@ def _write_api_md(routes: List[dict], path: str) -> None:
                 f.write("- **Models**     : {}\n".format(
                     ", ".join("`{}`".format(m) for m in models[:5])))
             f.write("\n---\n\n")
+
+
+def _response_system() -> str:
+    return (
+        "You are a technical API documentation expert.\n"
+        "Your task is to extract DETAILED API response structures from PHP controller code.\n\n"
+        "CRITICAL RULES:\n"
+        "- Extract ALL nested fields - don't say 'array', say what's IN the array\n"
+        "- If array of objects, show fields of each object\n"
+        "- Show nested object structure with all their fields\n"
+        "- Use actual field names from code, not generic types\n"
+        "- Be specific: instead of 'data': 'array', show 'data': { 'id': 'integer', 'name': 'string' }\n"
+        "- Include array items structure: 'items': [ { 'field1': 'type', 'field2': 'type' } ]\n"
+        "- Note pagination fields if present (total, per_page, current_page, etc.)\n"
+        "- Only extract what's actually in the code - don't invent fields\n"
+        "- Use descriptive hints for complex types, e.g., 'email|string', 'timestamp|datetime'"
+    )
+
+
+def _response_prompt(route: dict) -> str:
+    method    = route.get("method", "?")
+    path      = route.get("full_path", route.get("path", "?"))
+    ctrl      = route.get("controller", "UNKNOWN").split("\\")[-1]
+    action    = route.get("action", "UNKNOWN")
+    snippet   = route.get("body_snippet", "")
+    
+    code_block = (
+        "```php\n{}\n```".format(snippet)
+        if snippet and snippet.strip()
+        else "_No code snippet available._"
+    )
+    
+    return (
+        "EXTRACT DETAILED API RESPONSE SCHEMA - Show actual field structure, not just types!\n\n"
+        "--- ENDPOINT ---\n"
+        "Method    : {}\n"
+        "Path      : {}\n"
+        "Controller: {}@{}\n"
+        "---\n\n"
+        "PHP Code:\n{}\n\n"
+        "--- DETAILED EXTRACTION TASK ---\n"
+        "ANALYZE THE CODE AND:\n"
+        "1. Find the return statement - what does this action return?\n"
+        "2. If returning an array - SHOW WHAT EACH ARRAY ITEM CONTAINS\n"
+        "3. If returning an object - LIST ALL FIELDS\n"
+        "4. If returning nested objects - SHOW THE FULL STRUCTURE\n"
+        "5. Use actual field names from the code\n"
+        "6. For each field, infer the data type from how it's used\n\n"
+        "EXAMPLES OF GOOD RESPONSES:\n\n"
+        "WRONG: {{\n"
+        "  \"data\": \"array\"\n"
+        "}}\n\n"
+        "CORRECT: {{\n"
+        "  \"data\": [\n"
+        "    {{\n"
+        "      \"id\": \"integer\",\n"
+        "      \"name\": \"string\",\n"
+        "      \"email\": \"string\",\n"
+        "      \"status\": \"string\"\n"
+        "    }}\n"
+        "  ]\n"
+        "}}\n\n"
+        "--- OUTPUT FORMAT ---\n\n"
+        "**Response Type**: `[json|array_of_objects|nested_json|paginated_array|etc]`\n\n"
+        "**Response Fields**:\n"
+        "```json\n"
+        "{{\n"
+        "  \"field1\": \"type_with_description\",\n"
+        "  \"field2\": [\n"
+        "    {{\n"
+        "      \"nested_field1\": \"type\",\n"
+        "      \"nested_field2\": \"type\"\n"
+        "    }}\n"
+        "  ],\n"
+        "  \"field3\": {{\n"
+        "    \"sub_field1\": \"type\",\n"
+        "    \"sub_field2\": \"type\"\n"
+        "  }}\n"
+        "}}\n"
+        "```\n\n"
+        "**Example Response**:\n"
+        "```json\n"
+        "{{example_with_actual_values}}\n"
+        "```\n\n"
+        "**Description**: [What this response represents and when it's returned]\n\n"
+        "If structure cannot be determined:\n"
+        "**Response**: Unable to determine detailed structure from available code."
+    ).format(method, path, ctrl, action, code_block)
+
+
+def _write_responses_md(
+    routes: List[dict],
+    path: str,
+    config: AIConfig = None,
+    no_ai: bool = False,
+) -> None:
+    """Generate responses.md with API response schemas using AI when needed."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    use_ai = not no_ai and config and config.use_ai
+    
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("# API Response Schemas\n\n")
+        f.write("Response bodies for each endpoint.\n\n---\n\n")
+        
+        for i, r in enumerate(routes):
+            method    = r.get("method", "?")
+            full_path = r.get("full_path", r.get("path", "?"))
+            response  = r.get("response", {})
+            ctrl      = r.get("controller", "UNKNOWN").split("\\")[-1]
+            action    = r.get("action", "UNKNOWN")
+            params    = r.get("params", [])
+            snippet   = r.get("body_snippet", "")
+            
+            f.write("## {} {}\n\n".format(method, full_path))
+            f.write("**Endpoint**: `{}@{}`\n\n".format(ctrl, action))
+            
+            if params:
+                f.write("**Path Parameters**:\n")
+                for p in params:
+                    f.write("- `{}` - (from URL path)\n".format(p))
+                f.write("\n")
+            
+            # Try static response first
+            if response and response.get("fields"):
+                resp_type = response.get("type", "json")
+                fields = response.get("fields", [])
+                f.write("**Response Type**: `{}`\n\n".format(resp_type))
+                f.write("**Response Fields**:\n```json\n{\n")
+                for field in fields:
+                    f.write("  \"{}\": <value>,\n".format(field))
+                f.write("}\n```\n\n")
+            elif use_ai and snippet:
+                # Use AI to extract response
+                print(f"    [{i+1}/{len(routes)}] AI analyze response: {method} {full_path}")
+                sys_msg = _response_system()
+                prompt = _response_prompt(r)
+                ai_response = call_ai(prompt, config, system=sys_msg, max_tokens=600)
+                
+                if ai_response and not ai_response.startswith("[AI failed"):
+                    f.write(ai_response.strip() + "\n\n")
+                    if config.delay > 0:
+                        time.sleep(config.delay)
+                else:
+                    f.write("**Response**: Unable to determine from code analysis.\n\n")
+            else:
+                f.write("**Response**: Unable to determine from available code.\n\n")
+            
+            f.write("---\n\n")
+
+
+def _write_responses_md_static(routes: List[dict], path: str) -> None:
+    """Generate responses.md with API response schemas (static only, no AI)."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("# API Response Schemas\n\n")
+        f.write("Response bodies for each endpoint.\n\n---\n\n")
+        
+        for r in routes:
+            method    = r.get("method", "?")
+            full_path = r.get("full_path", r.get("path", "?"))
+            response  = r.get("response", {})
+            ctrl      = r.get("controller", "UNKNOWN").split("\\")[-1]
+            action    = r.get("action", "UNKNOWN")
+            title     = full_path.rstrip("/").split("/")[-1] or "root"
+            params    = r.get("params", [])
+            
+            f.write("## {} {}\n\n".format(method, full_path))
+            f.write("**Endpoint**: `{}@{}`\n\n".format(ctrl, action))
+            
+            if params:
+                f.write("**Path Parameters**:\n")
+                for p in params:
+                    f.write("- `{}` - (from URL path)\n".format(p))
+                f.write("\n")
+            
+            if response:
+                resp_type = response.get("type", "unknown")
+                fields = response.get("fields", [])
+                f.write("**Response Type**: `{}`\n\n".format(resp_type))
+                
+                if fields:
+                    f.write("**Response Fields**:\n```json\n{\n")
+                    for field in fields:
+                        f.write("  \"{}\": <value>,\n".format(field))
+                    f.write("}\n```\n"
+                    )
+                else:
+                    f.write("**Response Fields**: Not detected (inferred from code)\n\n")
+            else:
+                f.write("**Response**: Not detected in static analysis. Run with AI for details.\n\n")
+            
+            f.write("---\n\n")
 
 
 def _write_business_md(
@@ -760,17 +970,18 @@ def _write_index(domain_map: Dict[str, List[dict]], docs_root: str) -> None:
     with open(os.path.join(docs_root, "index.md"), "w", encoding="utf-8") as f:
         f.write("# Backend API Index\n\n")
         f.write("Total endpoints: **{}**\n\n".format(total))
-        f.write("| Domain | Endpoints | API Ref | Business Docs | SQL Audit |\n")
-        f.write("|--------|-----------|---------|---------------|-----------|\n")
+        f.write("| Domain | Endpoints | API Ref | Responses | Business Docs | SQL Audit |\n")
+        f.write("|--------|-----------|---------|-----------|---------------|-----------|\n")
         for domain in sorted(domain_map.keys()):
             count = len(domain_map[domain])
             b     = "./{}".format(domain)
             f.write(
                 "| **{}** | {} "
                 "| [api.md]({}/api.md) "
+                "| [responses.md]({}/responses.md) "
                 "| [business.md]({}/business.md) "
                 "| [legacy_query.sql]({}/legacy_query.sql) |\n".format(
-                    domain, count, b, b, b,
+                    domain, count, b, b, b, b,
                 )
             )
         f.write("\n---\n_Generated by doc_writer_\n")
