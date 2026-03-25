@@ -490,7 +490,8 @@ def generate_all_docs(
             )
         ]
 
-        if not pending_biz and not pending_sql and not force:
+        responses_stale = _responses_have_unknown(os.path.join(ddir, "responses.md"))
+        if not pending_biz and not pending_sql and not responses_stale and not force:
             print("  skip {} ({} routes -- all done)".format(
                 domain, len(domain_routes)))
             continue
@@ -564,6 +565,18 @@ def generate_all_docs(
 # =============================================================================
 # FILE WRITERS
 # =============================================================================
+
+def _responses_have_unknown(path: str) -> bool:
+    """Return True if responses.md exists and still has unresolved placeholders."""
+    if not os.path.exists(path):
+        return False
+    try:
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
+        return "Unable to determine from available code." in content
+    except Exception:
+        return False
+
 
 def _write_api_md(routes: List[dict], path: str) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)

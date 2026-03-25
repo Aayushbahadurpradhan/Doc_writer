@@ -407,10 +407,8 @@ def detect_apis(project_root: str) -> List[dict]:
 
 def save_routes_json(routes: List[dict], output_path: str) -> None:
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    # Remove body_snippet from JSON (keep docs clean)
-    clean = [{k: v for k, v in r.items() if k != "body_snippet"} for r in routes]
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(clean, f, indent=2)
+        json.dump(routes, f, indent=2)
     print(f"  [OK] routes.json -> {output_path}")
 
 

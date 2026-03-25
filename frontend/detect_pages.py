@@ -378,8 +378,11 @@ def _build_example_url(path: str, base_url: str = "http://localhost:8000") -> st
     Build an example browser URL from a route path.
       /admin/affiliate/configure/:id  →  http://localhost:8000/admin/affiliate/configure/1
       /admin/billing/:invType/:payType/:filter/:date  →  .../standard/check/all/2025-01-01
+      UNKNOWN / None  →  None  (caller will show 'Route not mapped')
     """
-    if not path or path in ("UNKNOWN", "/"):
+    if not path or path == "UNKNOWN":
+        return None
+    if path == "/":
         return f"{base_url}/"
 
     def _replace(m: re.Match) -> str:

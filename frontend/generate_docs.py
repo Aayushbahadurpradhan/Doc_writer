@@ -290,31 +290,55 @@ def _write_missing_apis(api_list: List[Tuple[str, str]], output_root: str) -> No
 
 def _skeleton_page(page: dict) -> str:
     """No-AI fallback: produce structured markdown from extracted page data."""
+    from frontend.detect_pages import \
+        _build_example_url  # lazy import to avoid circular
+
     path                = page.get("path", "UNKNOWN")
     component           = page.get("component", "UNKNOWN")
-    comp_file           = page.get("component_file") or "not found"
-    example_url         = page.get("example_url", "N/A")
+    comp_file           = page.get("component_file")        # None means not found
+    example_url         = page.get("example_url")           # None means unrouted
     layout              = page.get("layout", "UNKNOWN")
-    children            = page.get("children", [])            # local imports
-    template_components = page.get("template_components", []) # template scan
+    children            = page.get("children", [])          # local import list
+    template_components = page.get("template_components", [])  # template scan
     composables         = page.get("composables", [])
     api_calls           = page.get("api_calls", [])
     state_mgmt          = page.get("state_management", [])
     unknowns            = page.get("unknowns", [])
+
+    # Re-compute example_url on the fly if missing/stale (e.g. old cached JSON)
+    if not example_url or str(example_url).strip() in ("N/A", "None", "null", ""):
+        example_url = _build_example_url(path)
+
+    # ── Example URL row ────────────────────────────────────────────────────────
+    if example_url:
+        url_row     = f"| **Example URL** | `{example_url}` |\n"
+        url_callout = f"> To verify this page open: **[{example_url}]({example_url})**\n\n"
+    else:
+        url_row     = "| **Example URL** | _Route not mapped_ |\n"
+        url_callout = "> Route has no URL mapping — component may be rendered as a modal or child.\n\n"
+
+    # ── Source file display ────────────────────────────────────────────────────
+    comp_file_display = f"`{comp_file}`" if comp_file else "_not found on disk_"
 
     # ── Child components ──────────────────────────────────────────────────────
     if children:
         children_md = "\n".join(f"- `{c}` _(imported)_" for c in children)
     elif template_components:
         children_md = "\n".join(f"- `{c}`" for c in template_components)
+    elif comp_file:
+        # File was found and scanned but contains no child components
+        children_md = "_None — no imported or template sub-components detected_"
     else:
-        children_md = "_None detected_"
+        # File could not be opened — we never scanned it
+        children_md = "_Could not scan — source file not found on disk_"
 
     # ── Composables ───────────────────────────────────────────────────────────
-    composables_md = (
-        "\n".join(f"- `{c}()`" for c in composables)
-        if composables else "_None detected_"
-    )
+    if composables:
+        composables_md = "\n".join(f"- `{c}()`" for c in composables)
+    elif comp_file:
+        composables_md = "_None — no composable/hook calls detected_"
+    else:
+        composables_md = "_Could not scan — source file not found on disk_"
 
     # ── State management ──────────────────────────────────────────────────────
     if state_mgmt:
@@ -326,8 +350,10 @@ def _skeleton_page(page: dict) -> str:
         for stype, names in by_type.items():
             state_lines.append(f"**{stype}**: {', '.join(f'`{n}`' for n in names)}")
         state_md = "\n".join(state_lines)
+    elif comp_file:
+        state_md = "_None — no Pinia/Vuex/Redux usage detected_"
     else:
-        state_md = "_None detected_"
+        state_md = "_Could not scan — source file not found on disk_"
 
     # ── API calls ─────────────────────────────────────────────────────────────
     api_lines = []
@@ -346,8 +372,10 @@ def _skeleton_page(page: dict) -> str:
             "|--------|----------|--------|-----------|\n"
             + "\n".join(api_lines)
         )
+    elif comp_file:
+        api_md = "_None — no axios/fetch/form calls detected_"
     else:
-        api_md = "_None detected_"
+        api_md = "_Could not scan — source file not found on disk_"
 
     # ── Unknowns / warnings ───────────────────────────────────────────────────
     unknowns_md = (
@@ -360,10 +388,10 @@ def _skeleton_page(page: dict) -> str:
         f"| Field | Value |\n"
         f"|-------|-------|\n"
         f"| **Component** | `{component}` |\n"
-        f"| **Source file** | `{comp_file}` |\n"
+        f"| **Source file** | {comp_file_display} |\n"
         f"| **Layout** | {layout} |\n"
-        f"| **Example URL** | `{example_url}` |\n\n"
-        f"> To verify this page open: **[{example_url}]({example_url})**\n\n"
+        f"{url_row}\n"
+        f"{url_callout}"
         f"## Child Components\n\n"
         f"{children_md}\n\n"
         f"## Composables Used\n\n"
@@ -375,4 +403,4 @@ def _skeleton_page(page: dict) -> str:
         f"## Warnings\n\n"
         f"{unknowns_md}\n\n"
         f"---"
-    )
+    )    

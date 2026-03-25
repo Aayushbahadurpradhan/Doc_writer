@@ -20,7 +20,8 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
 from backend.detect_apis import detect_apis, save_routes_json
-from backend.generate_docs import ProgressTracker, generate_all_docs
+from backend.generate_docs import (ProgressTracker, detect_domain,
+                                   generate_all_docs)
 from backend.validate_backend import (print_validation_summary,
                                       save_validation_report, validate_backend)
 from frontend.detect_pages import detect_pages, save_pages_json
@@ -643,6 +644,60 @@ def _detect_state(content):
 
 
 # =============================================================================
+# DOMAIN-RANGE FILTER
+# =============================================================================
+
+def _filter_routes_by_domain(routes, domain_start=None, domain_end=None):
+    """
+    Return only routes whose detected domain falls within [domain_start, domain_end].
+
+    Both bounds are inclusive and case-insensitive.  Pass None to leave a bound
+    open (e.g. domain_start="n" with domain_end=None → n through z).
+
+    Usage – run two terminals in parallel:
+      Terminal 1:  --domain-end m         (a … m)
+      Terminal 2:  --domain-start n       (n … z)
+    """
+    if not domain_start and not domain_end:
+        return routes  # nothing to filter
+
+    lo = (domain_start or "").lower().strip()
+    hi = (domain_end   or "").lower().strip()
+
+    filtered = []
+    skipped_domains: set = set()
+    kept_domains: set = set()
+
+    for r in routes:
+        domain = detect_domain(
+            r.get("method", "GET"),
+            r.get("full_path", r.get("path", "/")),
+            r.get("controller", ""),
+        )
+        d = domain.lower()
+        if lo and d < lo:
+            skipped_domains.add(domain)
+            continue
+        if hi and d > hi:
+            skipped_domains.add(domain)
+            continue
+        kept_domains.add(domain)
+        filtered.append(r)
+
+    if skipped_domains:
+        print("  [domain-filter] keeping {} routes across {} domains ({})".format(
+            len(filtered), len(kept_domains), ", ".join(sorted(kept_domains)[:8]) +
+            ("…" if len(kept_domains) > 8 else ""),
+        ))
+        print("  [domain-filter] skipping {} domains: {}".format(
+            len(skipped_domains),
+            ", ".join(sorted(skipped_domains)[:8]) +
+            ("…" if len(skipped_domains) > 8 else ""),
+        ))
+    return filtered
+
+
+# =============================================================================
 # PER-PAGE FILE WRITER
 # =============================================================================
 
@@ -769,8 +824,13 @@ def cmd_generate_docs(args):
             routes.extend(_do_extract_backend(backend_root, routes_cache))
 
         print("\n  Step 2: Generating per-domain docs...")
+        routes_to_doc = _filter_routes_by_domain(
+            routes,
+            domain_start=getattr(args, "domain_start", None),
+            domain_end=getattr(args, "domain_end", None),
+        )
         generate_all_docs(
-            routes, docs_backend, config,
+            routes_to_doc, docs_backend, config,
             no_ai=no_ai, force=args.force, state_dir=state_dir,
         )
 
@@ -912,6 +972,15 @@ def build_parser():
         ── Force full regeneration ──────────────────────────────────────────────
           python main.py generate-docs --path ./project --force
 
+        ── Parallel two-terminal mode (e.g. with Ollama / slow GPU) ─────────────
+          # Terminal 1 – domains a … m
+          python main.py generate-docs --path ./project --order backend --domain-end m
+          # Terminal 2 – domains n … z  (run simultaneously in another terminal)
+          python main.py generate-docs --path ./project --order backend --domain-start n
+          # They write to the same output folder; domain sub-dirs never overlap.
+          # Each terminal skips domains already finished by the other
+          # (ProgressTracker).  Split at any letter you like.
+
         ── Output (named after your project) ────────────────────────────────────
           doc_output/nuerabenefits/
             docs/
@@ -966,6 +1035,13 @@ def build_parser():
     flt.add_argument("--skip-validation",    action="store_true")
     flt.add_argument("--rerun-changed-only", action="store_true",
                      help="Only re-process files changed since last run")
+    flt.add_argument("--domain-start", default=None, metavar="LETTER",
+                     help="Only process backend domains >= this letter (e.g. 'n'). "
+                          "Run a second terminal with --domain-start n to parallelize "
+                          "work: terminal-1 does a–m, terminal-2 does n–z.")
+    flt.add_argument("--domain-end", default=None, metavar="LETTER",
+                     help="Only process backend domains <= this letter (e.g. 'm'). "
+                          "Combine with --domain-start for a custom slice.")
 
     return p
 
