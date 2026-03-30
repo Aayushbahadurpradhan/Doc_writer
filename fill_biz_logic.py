@@ -11,6 +11,7 @@ insertion order.
 ─────────────────────────────────────────────────────────────────────────────
 """
 
+import argparse
 import os
 import re
 import sys
@@ -168,12 +169,31 @@ def fix_file(path: str) -> tuple[bool, int]:
 # ────────────────────────────────────────────────────────────────────────────
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Fill placeholder sections in backend business.md files.",
+    )
+    parser.add_argument(
+        "backend_path",
+        nargs="?",
+        default=BACKEND_PATH,
+        help=(
+            "Path to the backend docs directory "
+            "(default: {})".format(BACKEND_PATH)
+        ),
+    )
+    args = parser.parse_args()
+    backend_path = args.backend_path
+
+    if not os.path.isdir(backend_path):
+        print("ERROR: Directory not found: " + backend_path, file=sys.stderr)
+        sys.exit(1)
+
     total_files  = 0
     total_fixed  = 0
     total_secs   = 0
     skipped      = 0
 
-    for root, _dirs, files in os.walk(BACKEND_PATH):
+    for root, _dirs, files in os.walk(backend_path):
         for fname in files:
             if fname != "business.md":
                 continue

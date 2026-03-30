@@ -6,7 +6,7 @@ Supports: Ollama (local), Anthropic, Groq, OpenAI, DeepSeek, Gemini.
 import json
 import os
 import time
-from typing import Optional, List
+from typing import List, Optional
 
 DEFAULT_OLLAMA_URL      = "http://localhost:11434/v1/chat/completions"
 DEFAULT_OLLAMA_TAGS     = "http://localhost:11434/api/tags"
@@ -128,8 +128,8 @@ def _call_ollama(model, messages, max_tokens, timeout=300):
     Disables qwen3 thinking mode to prevent HTTP 500 errors.
     Falls back to /v1/chat if /api/generate fails.
     """
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     # Build prompt from messages
     system_text = ""
@@ -263,7 +263,7 @@ def call_ai(prompt, config, system="", max_tokens=1200):
 
         if prov == "anthropic":
             payload = {
-                "model":      "claude-sonnet-4-5",
+                "model":      model,
                 "max_tokens": max_tokens,
                 "messages":   [{"role": "user", "content": prompt}],
             }

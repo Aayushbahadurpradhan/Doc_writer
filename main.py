@@ -711,6 +711,9 @@ def ask_ai_order():
     print("    [1] Backend first  (Laravel routes, DB queries)")
     print("    [2] Frontend first (Pages, components, API calls)")
     print("    [3] Both together  (default)\n")
+    if not sys.stdin.isatty():
+        print("  Non-interactive mode -- defaulting to 'both'")
+        return "both"
     choice = input("  Enter 1, 2, or 3 [default: 3]: ").strip()
     if choice == "1":
         return "backend"
@@ -808,12 +811,14 @@ def cmd_generate_docs(args):
         routes_cache = os.path.join(state_dir, "routes.json")
         be_state     = os.path.join(state_dir, "backend_mtimes.json")
 
+        be_changed = True
         if os.path.exists(routes_cache) and not args.force:
             if not _has_changed(backend_root, {".php"}, be_state):
                 print("\n  [CACHE] No PHP changes -- loading from routes.json")
                 with open(routes_cache, encoding="utf-8") as fp:
                     routes.extend(json.load(fp))
                 print("  {} routes loaded".format(len(routes)))
+                be_changed = False
             else:
                 print("\n  PHP changed -- re-extracting...")
                 routes.extend(_do_extract_backend(backend_root, routes_cache))
@@ -822,6 +827,10 @@ def cmd_generate_docs(args):
                 print("\n  --force: re-extracting from scratch...")
             print("\n  Step 1: Extracting routes & controller logic...")
             routes.extend(_do_extract_backend(backend_root, routes_cache))
+
+        if getattr(args, "rerun_changed_only", False) and not be_changed:
+            print("\n  [SKIP] No PHP changes -- skipping doc generation (--rerun-changed-only)")
+            return
 
         print("\n  Step 2: Generating per-domain docs...")
         routes_to_doc = _filter_routes_by_domain(
@@ -852,6 +861,7 @@ def cmd_generate_docs(args):
         pages_cache = os.path.join(state_dir, "pages.json")
         fe_state    = os.path.join(state_dir, "frontend_mtimes.json")
 
+        fe_changed = True
         if os.path.exists(pages_cache) and not args.force:
             if not _has_changed(
                 frontend_root,
@@ -862,6 +872,7 @@ def cmd_generate_docs(args):
                 with open(pages_cache, encoding="utf-8") as fp:
                     pages.extend(json.load(fp))
                 print("  {} pages loaded".format(len(pages)))
+                fe_changed = False
             else:
                 print("\n  Frontend changed -- re-scanning...")
                 pages.extend(_do_extract_frontend(frontend_root, pages_cache))
@@ -870,6 +881,10 @@ def cmd_generate_docs(args):
                 print("\n  --force: re-scanning from scratch...")
             print("\n  Step 1: Detecting pages & API calls...")
             pages.extend(_do_extract_frontend(frontend_root, pages_cache))
+
+        if getattr(args, "rerun_changed_only", False) and not fe_changed:
+            print("\n  [SKIP] No frontend changes -- skipping doc generation (--rerun-changed-only)")
+            return
 
         print("\n  Step 2: Generating organized frontend documentation...")
         generate_pages_md(
@@ -940,6 +955,77 @@ def cmd_generate_docs(args):
         print("  Excel  -> " + fe_excel)
     print("=" * 60 + "\n")
 
+    # ── Excel workbooks (optional) ────────────────────────────────────────────
+    if getattr(args, "excel", False):
+        _generate_excel(output_dir)
+
+
+def _apply_placeholder_apis(pages, placeholder_file):
+    """
+    Augment UNKNOWN API calls using ai_placeholder_apis.json.
+
+    For each page whose code snippet contains a known function name from the
+    placeholder file, the first matching UNKNOWN endpoint is resolved to the
+    real endpoint path stored in the JSON entry.
+
+    The special key '{val}' is skipped (too broad to resolve safely).
+    """
+    if not os.path.exists(placeholder_file):
+        return
+    try:
+        with open(placeholder_file, encoding="utf-8") as f:
+            placeholders = json.load(f)
+    except Exception:
+        return
+    if not placeholders:
+        return
+
+    resolved = 0
+    for page in pages:
+        snippet = page.get("code_snippet", "")
+        if not snippet:
+            continue
+        for api_call in page.get("api_calls", []):
+            if api_call.get("endpoint") not in ("UNKNOWN", "UNKNOWN (dynamic)"):
+                continue
+            for fn_name, entry in placeholders.items():
+                if fn_name == "{val}":
+                    continue  # wildcard key — skip to avoid over-annotation
+                if fn_name.lower() in snippet.lower():
+                    endpoints = entry.get("endpoints", [])
+                    owner     = entry.get("owner", "")
+                    if endpoints:
+                        api_call["endpoint"]            = endpoints[0]
+                        api_call["endpoint_candidates"] = endpoints
+                        api_call["resolved_via"]        = "ai_placeholder_apis.json"
+                        api_call["owner"]               = owner
+                        resolved += 1
+                        break
+
+    if resolved:
+        print("  [placeholder] Resolved {} dynamic endpoint(s) via ai_placeholder_apis.json".format(
+            resolved))
+
+
+def _generate_excel(output_dir):
+    """Generate backend and frontend Excel workbooks from generated docs."""
+    try:
+        from build_excel import generate_excel
+        docs_root    = os.path.join(output_dir, "docs")
+        project_name = os.path.basename(output_dir)
+        print("\n" + "-" * 60)
+        print("  Generating Excel workbooks...")
+        print("-" * 60)
+        be_path, fe_path = generate_excel(docs_root, output_dir, project_name)
+        if be_path and os.path.exists(be_path):
+            print("  Backend Excel  -> " + be_path)
+        if fe_path and os.path.exists(fe_path):
+            print("  Frontend Excel -> " + fe_path)
+    except ImportError:
+        print("  [WARN] openpyxl not installed -- skipping Excel (pip install openpyxl)")
+    except Exception as e:
+        print("  [WARN] Excel generation failed: " + str(e)[:120])
+
 
 def _do_extract_backend(backend_root, cache_path):
     routes = detect_apis(backend_root)
@@ -948,7 +1034,12 @@ def _do_extract_backend(backend_root, cache_path):
 
 
 def _do_extract_frontend(frontend_root, cache_path):
-    pages = scan_frontend_pages(frontend_root)
+    pages = detect_pages(frontend_root)
+    # Augment UNKNOWN API calls using the placeholder mapping file (if present)
+    _apply_placeholder_apis(
+        pages,
+        os.path.join(ROOT, "ai_placeholder_apis.json"),
+    )
     save_pages_json(pages, cache_path)
     return pages
 
@@ -1031,6 +1122,8 @@ def build_parser():
                     help="Pipeline order (skips the interactive prompt)")
     ai.add_argument("--force",    action="store_true",
                     help="Ignore all caches and regenerate everything")
+    ai.add_argument("--excel",    action="store_true",
+                    help="Generate color-coded Excel workbooks after documentation is complete")
 
     flt = gen.add_argument_group("Filters")
     flt.add_argument("--only-backend",       action="store_true")

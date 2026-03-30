@@ -23,6 +23,12 @@ from collections import defaultdict
 from typing import Dict, List, Set
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from prompts.backend_prompts import business_prompt as _business_prompt
+from prompts.backend_prompts import business_system as _business_system
+from prompts.backend_prompts import response_prompt as _response_prompt
+from prompts.backend_prompts import response_system as _response_system
+from prompts.backend_prompts import sql_prompt as _sql_prompt
+from prompts.backend_prompts import sql_system as _sql_system
 from shared.ai_client import AIConfig, call_ai
 
 # =============================================================================
@@ -37,14 +43,15 @@ _ENTITY_WORDS = {
     'contract', 'commission', 'enrollment', 'dependent', 'beneficiary',
     'carrier', 'template', 'email', 'bank', 'billing', 'claim', 'document',
     'report', 'license', 'medical', 'platform', 'feature', 'note', 'term',
-    'rider', 'address', 'question', 'text', 'tier', 'waive', 'fee',
+    'rider', 'address', 'question', 'text', 'tier', 'waive', 'fee', 'file',
     'acm', 'prudential', 'website', 'homepage', 'downline', 'upline',
     'referral', 'webhook', 'notification', 'queue', 'lead', 'script',
     'analytic', 'statistic', 'progress', 'rate', 'price', 'renewal',
     'receipt', 'tax', 'eft', 'ach', 'census', 'credit', 'routing',
     'client', 'user', 'admin', 'resource', 'activity', 'log', 'audit',
     'setting', 'option', 'type', 'status', 'level', 'info', 'detail',
-    'summary', 'history', 'request', 'approval', 'sub',
+    'summary', 'history', 'request', 'approval', 'security',
+    'compare', 'contract', 'business', 'association', 'signature',
 }
 
 # Verb/action words - stripped before picking the domain noun
@@ -58,14 +65,47 @@ _VERB_WORDS = {
     'activate', 'deactivate', 'enable', 'disable', 'calculate',
     'store', 'define', 'retrieve', 'preview', 'sync', 'onboard',
     'migrate', 'switch', 'resend', 'reprocess', 'refund',
-    'new', 'latest', 'recent', 'active',
+    'new', 'latest', 'recent', 'active', 'uploaded', 'pending', 'signed',
+    # Common stopwords / connectors / generic words
+    'all', 'and', 'or', 'any', 'the', 'of', 'by', 'old', 'own', 'my',
+    'true', 'false', 'yes', 'no',
+    # Generic UI/app words that are not meaningful domain names
+    'top', 'app', 'main', 'home', 'base', 'core', 'common', 'misc',
+    'other', 'item', 'view', 'page', 'form',
+    'sign', 'login', 'logout', 'auth',
+    # Prefix/modifier words (sub-, multi-, etc.)
+    'sub', 'multi', 'bulk',
 }
+
+# Words that must NOT be singularized (already in canonical singular form
+# or are not count nouns)
+_NO_SINGULAR = {
+    'status', 'access', 'address', 'process', 'progress', 'canvas',
+    'analysis', 'basis', 'axis', 'diagnosis', 'thesis', 'nexus',
+    'census', 'bonus', 'focus', 'virus', 'campus', 'minus', 'plus',
+}
+
+
+def _split_segment(seg: str) -> list:
+    """
+    Split a URL path segment into individual lowercase words.
+    Handles: hyphens, underscores, AND camelCase.
+      getContractNameList -> ['get', 'contract', 'name', 'list']
+      update-agent-info   -> ['update', 'agent', 'info']
+      addEFTRequest       -> ['add', 'eft', 'request']
+    """
+    # Insert underscore between camelCase boundaries before splitting
+    s = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', seg)   # camelCase
+    s = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', s)   # ACRONYMWord
+    s = s.replace('-', '_').lower()
+    return [w for w in s.split('_') if w and len(w) >= 2]
 
 
 def detect_domain(method: str, path: str, handler: str = "") -> str:
     """
     Auto-detect a domain grouping from the route URL path.
     Strips verb words, prefers known entity words.
+    Tries multiple path segments before falling back.
 
     Examples:
       /v1/add-agent-license       -> agent
@@ -75,7 +115,11 @@ def detect_domain(method: str, path: str, handler: str = "") -> str:
       /v2/agent/{id}/commission   -> agent
       /acm/get-sync-neura         -> acm
       /v1/manage-groups           -> group  (plural normalised)
+      /all                        -> general  (stopword, try next segment)
     """
+    # Split camelCase BEFORE lowercasing so the boundaries are still visible
+    path = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', path)   # camelCase
+    path = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', path) # ACRONYMWord
     clean = path.lower().strip().strip("/")
 
     # Skip version and api prefix segments
@@ -89,42 +133,63 @@ def detect_domain(method: str, path: str, handler: str = "") -> str:
     if not parts:
         return "general"
 
-    first = parts[0]
+    domain_word = None
 
-    # Skip path params - use next segment
-    if first.startswith("{") or first.startswith(":"):
-        first = parts[1] if len(parts) > 1 else "general"
+    # Try each path segment in order (up to 3) to find a meaningful entity word
+    for seg in parts[:3]:
+        if seg.startswith("{") or seg.startswith(":"):
+            continue  # skip URL params
 
-    # Split hyphenated segment into individual words
-    words = [w for w in first.replace("-", "_").split("_") if w and len(w) >= 2]
+        # Split camelCase + hyphen/underscore into individual words
+        words = _split_segment(seg)
+        if not words:
+            continue
 
-    if not words:
-        return "general"
+        # All non-verb/non-stopword candidates
+        noun_words = [w for w in words if w not in _VERB_WORDS]
 
-    # All non-verb words (the noun candidates)
-    noun_words = [w for w in words if w not in _VERB_WORDS]
+        # Prefer known entity words (left to right)
+        entity_matches = [w for w in noun_words if w in _ENTITY_WORDS]
+        if entity_matches:
+            domain_word = entity_matches[0]
+            break
 
-    # Prefer known entity words found in the segment
-    entity_matches = [w for w in noun_words if w in _ENTITY_WORDS]
-    if entity_matches:
-        domain_word = entity_matches[0]
-    elif noun_words:
-        domain_word = noun_words[0]
-    else:
-        # All words are verbs - use last word as action domain
-        domain_word = words[-1]
+        # Accept first non-verb word ≥ 3 chars
+        for candidate in noun_words:
+            if len(candidate) >= 3:
+                domain_word = candidate
+                break
+        if domain_word:
+            break
 
-    if len(domain_word) < 2:
-        domain_word = words[0]
+    if domain_word is None:
+        # Fallback: last meaningful word of first non-param segment
+        first_seg = next(
+            (s for s in parts if not s.startswith("{") and not s.startswith(":")),
+            parts[0],
+        )
+        words = _split_segment(first_seg)
+        # Filter out verbs/stopwords in fallback too
+        noun_words = [w for w in words if w not in _VERB_WORDS and len(w) >= 3]
+        domain_word = noun_words[-1] if noun_words else (words[-1] if words else "general")
+
+    if not domain_word or len(domain_word) < 2:
+        domain_word = "general"
 
     # Normalise plurals -> singular for cleaner folder names
     w = domain_word.lower()
-    if w.endswith("ies") and len(w) > 4:
-        w = w[:-3] + "y"           # policies -> policy
+    if w in _NO_SINGULAR:
+        pass                            # never singularize these words
+    elif w.endswith("ies") and len(w) > 4:
+        w = w[:-3] + "y"               # policies -> policy
     elif w.endswith("ses") and len(w) > 4:
-        w = w[:-2]                  # statuses -> status
+        w = w[:-1]                     # statuses -> status  (remove only the trailing s)
     elif w.endswith("s") and len(w) > 4 and not w.endswith("ss"):
-        w = w[:-1]                  # agents -> agent, groups -> group
+        w = w[:-1]                     # agents -> agent, groups -> group
+
+    # Final guard: if result is still a verb/stopword, use general
+    if w in _VERB_WORDS:
+        return "general"
 
     return w
 
@@ -170,7 +235,8 @@ class ProgressTracker:
 
     def mark_api(self, method: str, path: str, ai: bool = False) -> None:
         key  = "{} {}".format(method, path)
-        for field in ("apis", "ai_apis" if ai else "apis"):
+        fields = ("apis", "ai_apis") if ai else ("apis",)
+        for field in fields:
             self._ensure_key(field)
             if key not in self.data[field]:
                 self.data[field].append(key)
@@ -178,7 +244,8 @@ class ProgressTracker:
 
     def mark_sql(self, method: str, path: str, ai: bool = False) -> None:
         key  = "{} {}".format(method, path)
-        for field in ("sql_apis", "sql_ai_apis" if ai else "sql_apis"):
+        fields = ("sql_apis", "sql_ai_apis") if ai else ("sql_apis",)
+        for field in fields:
             self._ensure_key(field)
             if key not in self.data[field]:
                 self.data[field].append(key)
@@ -202,154 +269,10 @@ class ProgressTracker:
 
 
 # =============================================================================
-# AI PROMPTS
+# AI PROMPTS (imported from prompts/backend_prompts.py)
+# _business_system, _business_prompt, _sql_system, _sql_prompt,
+# _response_system, _response_prompt are all imported at module top.
 # =============================================================================
-
-def _business_system() -> str:
-    return (
-        "You are a senior technical writer documenting a web application API.\n"
-        "Your documentation must be:\n"
-        "- SPECIFIC: use actual variable names and values from the code\n"
-        "- COMPLETE: cover every business rule, validation, condition, and side effect\n"
-        "- BUSINESS-FOCUSED: explain WHY this endpoint exists, not just what it does\n"
-        "- HONEST: if something is unclear say 'inferred from code', never invent details\n"
-        "Do NOT assume any specific industry unless it is explicitly visible in the code."
-    )
-
-
-def _business_prompt(route: dict) -> str:
-    method    = route.get("method", "?")
-    path      = route.get("full_path", route.get("path", "?"))
-    ctrl      = route.get("controller", "UNKNOWN").split("\\")[-1]
-    action    = route.get("action", "UNKNOWN")
-    snippet   = route.get("body_snippet", "")
-    mw        = route.get("middleware", [])
-    title     = path.rstrip("/").split("/")[-1] or "root"
-
-    code_block = (
-        "```php\n{}\n```".format(snippet)
-        if snippet and snippet.strip()
-        else "_No code snippet available._"
-    )
-
-    return (
-        "Document this API endpoint completely. Output ONLY markdown. No intro text.\n\n"
-        "--- ENDPOINT METADATA ---\n"
-        "Endpoint   : {} {}\n"
-        "Controller : {}@{}\n"
-        "Middleware : {}\n"
-        "---\n\n"
-        "PHP Code:\n{}\n\n"
-        "--- INSTRUCTIONS ---\n"
-        "Read the code and extract EVERY detail:\n"
-        "- All $request->input() / $request->xxx fields -> input parameters\n"
-        "- All if/else branches -> business logic conditions\n"
-        "- All DB writes (insert/update/delete/save/create) -> side effects\n"
-        "- All Mail::send / event() / dispatch() -> side effects\n"
-        "- All auth checks (middleware, authorize, gate) -> access control\n"
-        "---\n\n"
-        "## {}\n\n"
-        "| Field | Value |\n"
-        "|-------|-------|\n"
-        "| **Endpoint** | `{} {}` |\n"
-        "| **Controller** | `{}@{}` |\n"
-        "| **Auth Required** | [Yes/No] |\n"
-        "| **HTTP Method** | {} |\n\n"
-        "### Purpose\n"
-        "[2-3 sentences: what this does, who calls it, why it exists]\n\n"
-        "### Business Logic\n"
-        "[Every rule, condition, validation, status transition as a separate bullet]\n\n"
-        "### Input Parameters\n"
-        "| Parameter | Type | Required | Description |\n"
-        "|-----------|------|----------|-------------|\n"
-        "[one row per input field, or: No parameters.]\n\n"
-        "### Database Operations\n"
-        "[numbered: 1. READ/WRITE table_name -- what and why, or: None]\n\n"
-        "### Side Effects\n"
-        "- **Emails**: [or None]\n"
-        "- **Jobs/Queues**: [or None]\n"
-        "- **Events**: [or None]\n"
-        "- **External APIs**: [or None]\n"
-        "- **Files**: [or None]\n\n"
-        "---"
-    ).format(
-        method, path,
-        ctrl, action,
-        ", ".join(mw) if mw else "None",
-        code_block,
-        title,
-        method, path,
-        ctrl, action,
-        method,
-    )
-
-
-def _sql_system() -> str:
-    return (
-        "You are a database engineer auditing a Laravel PHP API.\n"
-        "Convert ALL ORM and raw SQL patterns to clean, executable SQL.\n\n"
-        "CRITICAL: every markdown table cell must contain EXACTLY ONE value.\n"
-        "WRONG: | **Type** | eloquent | raw_sql |\n"
-        "RIGHT: | **Type** | eloquent |\n\n"
-        "ORM PATTERNS:\n"
-        "::all() ::get() ::find() ::first() ::where()  -> SELECT\n"
-        "::create([]) ::insert([]) new Model; save()   -> INSERT\n"
-        "->update([]) $m->save() after fetch            -> UPDATE\n"
-        "->delete() ::destroy()                         -> DELETE\n"
-        "->with(rel)                                    -> LEFT JOIN\n"
-        "DB::beginTransaction() DB::transaction()       -> Transaction: Yes\n"
-        "query in foreach/while                         -> N+1 RISK\n\n"
-        "RULES:\n"
-        "- Use ? for bound parameters\n"
-        "- Model to table: UserInfo=user_infos, PolicyHolder=policy_holders\n"
-        "- Zero queries in code = output exactly one line: -- No database queries\n"
-        "- Transaction field: write only Yes or No, nothing else\n"
-        "- Do NOT produce empty blocks for routes with no DB calls"
-    )
-
-
-def _sql_prompt(route: dict) -> str:
-    method  = route.get("method", "?")
-    path    = route.get("full_path", route.get("path", "?"))
-    ctrl    = route.get("controller", "UNKNOWN").split("\\")[-1]
-    action  = route.get("action", "UNKNOWN")
-    snippet = route.get("body_snippet", "")
-    title   = path.rstrip("/").split("/")[-1] or "root"
-
-    code_block = (
-        "```php\n{}\n```".format(snippet)
-        if snippet and snippet.strip()
-        else "_No code available._"
-    )
-
-    return (
-        "SQL audit: {} {} | {}@{}\n\n"
-        "{}\n\n"
-        "For each DB query found, output one block:\n\n"
-        "### {} -- Query N: [what it does]\n\n"
-        "| Field | Value |\n"
-        "|-------|-------|\n"
-        "| **Type** | [eloquent / raw_sql / db_facade] |\n"
-        "| **Operation** | [SELECT / INSERT / UPDATE / DELETE / UPSERT] |\n"
-        "| **Tables** | [table_name] |\n"
-        "| **Columns Read** | [columns or *] |\n"
-        "| **Columns Written** | [columns or None] |\n"
-        "| **Conditions** | [WHERE clause or None] |\n"
-        "| **Joins** | [JOIN type and tables or None] |\n"
-        "| **Order / Group** | [ORDER BY or None] |\n"
-        "| **Aggregates** | [COUNT/SUM/etc or None] |\n"
-        "| **Transaction** | [Yes / No] |\n"
-        "| **Soft Deletes** | [Yes / No] |\n\n"
-        "```sql\n"
-        "-- real executable SQL here\n"
-        "-- use ? for bound parameters\n"
-        "```\n\n"
-        "**Optimization Notes:**\n"
-        "- [one issue per bullet, or: No issues identified]\n\n"
-        "---\n\n"
-        "Output ONLY the query blocks. No intro sentence. No summary."
-    ).format(method, path, ctrl, action, code_block, title)
-
 
 # =============================================================================
 # STATIC SQL FALLBACK (when --no-ai)
@@ -607,94 +530,6 @@ def _write_api_md(routes: List[dict], path: str) -> None:
                 f.write("- **Models**     : {}\n".format(
                     ", ".join("`{}`".format(m) for m in models[:5])))
             f.write("\n---\n\n")
-
-
-def _response_system() -> str:
-    return (
-        "You are a technical API documentation expert.\n"
-        "Your task is to extract DETAILED API response structures from PHP controller code.\n\n"
-        "CRITICAL RULES:\n"
-        "- Extract ALL nested fields - don't say 'array', say what's IN the array\n"
-        "- If array of objects, show fields of each object\n"
-        "- Show nested object structure with all their fields\n"
-        "- Use actual field names from code, not generic types\n"
-        "- Be specific: instead of 'data': 'array', show 'data': { 'id': 'integer', 'name': 'string' }\n"
-        "- Include array items structure: 'items': [ { 'field1': 'type', 'field2': 'type' } ]\n"
-        "- Note pagination fields if present (total, per_page, current_page, etc.)\n"
-        "- Only extract what's actually in the code - don't invent fields\n"
-        "- Use descriptive hints for complex types, e.g., 'email|string', 'timestamp|datetime'"
-    )
-
-
-def _response_prompt(route: dict) -> str:
-    method    = route.get("method", "?")
-    path      = route.get("full_path", route.get("path", "?"))
-    ctrl      = route.get("controller", "UNKNOWN").split("\\")[-1]
-    action    = route.get("action", "UNKNOWN")
-    snippet   = route.get("body_snippet", "")
-    
-    code_block = (
-        "```php\n{}\n```".format(snippet)
-        if snippet and snippet.strip()
-        else "_No code snippet available._"
-    )
-    
-    return (
-        "EXTRACT DETAILED API RESPONSE SCHEMA - Show actual field structure, not just types!\n\n"
-        "--- ENDPOINT ---\n"
-        "Method    : {}\n"
-        "Path      : {}\n"
-        "Controller: {}@{}\n"
-        "---\n\n"
-        "PHP Code:\n{}\n\n"
-        "--- DETAILED EXTRACTION TASK ---\n"
-        "ANALYZE THE CODE AND:\n"
-        "1. Find the return statement - what does this action return?\n"
-        "2. If returning an array - SHOW WHAT EACH ARRAY ITEM CONTAINS\n"
-        "3. If returning an object - LIST ALL FIELDS\n"
-        "4. If returning nested objects - SHOW THE FULL STRUCTURE\n"
-        "5. Use actual field names from the code\n"
-        "6. For each field, infer the data type from how it's used\n\n"
-        "EXAMPLES OF GOOD RESPONSES:\n\n"
-        "WRONG: {{\n"
-        "  \"data\": \"array\"\n"
-        "}}\n\n"
-        "CORRECT: {{\n"
-        "  \"data\": [\n"
-        "    {{\n"
-        "      \"id\": \"integer\",\n"
-        "      \"name\": \"string\",\n"
-        "      \"email\": \"string\",\n"
-        "      \"status\": \"string\"\n"
-        "    }}\n"
-        "  ]\n"
-        "}}\n\n"
-        "--- OUTPUT FORMAT ---\n\n"
-        "**Response Type**: `[json|array_of_objects|nested_json|paginated_array|etc]`\n\n"
-        "**Response Fields**:\n"
-        "```json\n"
-        "{{\n"
-        "  \"field1\": \"type_with_description\",\n"
-        "  \"field2\": [\n"
-        "    {{\n"
-        "      \"nested_field1\": \"type\",\n"
-        "      \"nested_field2\": \"type\"\n"
-        "    }}\n"
-        "  ],\n"
-        "  \"field3\": {{\n"
-        "    \"sub_field1\": \"type\",\n"
-        "    \"sub_field2\": \"type\"\n"
-        "  }}\n"
-        "}}\n"
-        "```\n\n"
-        "**Example Response**:\n"
-        "```json\n"
-        "{{example_with_actual_values}}\n"
-        "```\n\n"
-        "**Description**: [What this response represents and when it's returned]\n\n"
-        "If structure cannot be determined:\n"
-        "**Response**: Unable to determine detailed structure from available code."
-    ).format(method, path, ctrl, action, code_block)
 
 
 def _write_responses_md(

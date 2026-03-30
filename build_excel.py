@@ -826,3 +826,41 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# =============================================================================
+# PUBLIC API — called from main.py via --excel flag
+# =============================================================================
+
+def generate_excel(
+    docs_root: str,
+    output_dir: str,
+    project_name: str = None,
+) -> tuple:
+    """
+    Generate backend and frontend Excel workbooks from docs in docs_root.
+
+    Args:
+        docs_root:    Path to docs/ folder (must contain backend/ and/or frontend/).
+        output_dir:   Where to save the .xlsx files.
+        project_name: Used for workbook titles and filenames. Defaults to output_dir basename.
+
+    Returns:
+        (backend_excel_path, frontend_excel_path) — either may be "" if not generated.
+    """
+    global PROJECT_NAME, BACKEND_PATH, FRONTEND_PATH, OUTPUT_DIR
+    global BACKEND_OUTPUT, FRONTEND_OUTPUT
+
+    PROJECT_NAME    = project_name or os.path.basename(os.path.abspath(output_dir))
+    BACKEND_PATH    = os.path.join(docs_root, "backend")
+    FRONTEND_PATH   = os.path.join(docs_root, "frontend")
+    OUTPUT_DIR      = output_dir
+    BACKEND_OUTPUT  = os.path.join(output_dir, "{}_backend.xlsx".format(PROJECT_NAME))
+    FRONTEND_OUTPUT = os.path.join(output_dir, "{}_frontend.xlsx".format(PROJECT_NAME))
+
+    os.makedirs(output_dir, exist_ok=True)
+    main()
+
+    be = BACKEND_OUTPUT  if os.path.exists(BACKEND_OUTPUT)  else ""
+    fe = FRONTEND_OUTPUT if os.path.exists(FRONTEND_OUTPUT) else ""
+    return be, fe

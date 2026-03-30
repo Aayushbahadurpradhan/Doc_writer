@@ -1,0 +1,17 @@
+# doc_writer — Python dependencies
+# Install with:  pip install -r requirements.txt
+
+# Excel generation (used by build_excel.py and frontend/generate_docs.py)
+openpyxl>=3.1.0
+
+# AI providers — install only what you need:
+anthropic>=0.25.0          # --provider anthropic  (sk-ant-... keys)
+groq>=0.9.0                # --provider groq        (gsk_... keys)
+openai>=1.30.0             # --provider openai      (sk-... keys)
+google-generativeai>=0.7.0 # --provider gemini      (AIza... keys)
+# deepseek uses the openai library, no extra package needed
+# ollama runs locally, no extra package needed (uses urllib.request)
+
+# Standard library only — no extra packages for:
+#   requests / HTTP calls (urllib.request is used throughout)
+#   JSON / regex / os / sys / argparse
