@@ -77,27 +77,27 @@ def save_validation_report(report: dict, output_path: str) -> None:
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
-    print(f"  ✅ validation_report.json → {output_path}")
+    print(f"  [OK] validation_report.json -> {output_path}")
 
 
 def print_validation_summary(report: dict) -> None:
     s = report.get("summary", {})
     total = s.get("total_routes", 0)
-    print("\n  ─── Backend Validation Summary ────────────────────────")
+    print("\n  --- Backend Validation Summary --------------------------")
     print(f"  Total routes       : {total}")
     print(f"  Undocumented       : {s.get('undocumented', 0)}")
     print(f"  Unparsed controllers: {s.get('unparsed_controllers', 0)}")
     print(f"  Unclassified queries: {s.get('unclassified_queries', 0)}")
     print(f"  Unknowns for review: {s.get('unknowns_requiring_review', 0)}")
-    print("  ────────────────────────────────────────────────────────")
+    print("  ---------------------------------------------------------")
 
     for key in ("undocumented_routes", "unparsed_controllers",
                 "unclassified_queries", "unknowns_requiring_review"):
         items = report.get(key, [])
         if items:
             label = key.replace("_", " ").title()
-            print(f"\n  ⚠️  {label}:")
+            print(f"\n  [WARN] {label}:")
             for item in items[:10]:
                 print(f"    - {item}")
             if len(items) > 10:
-                print(f"    … and {len(items)-10} more")
+                print(f"    ... and {len(items)-10} more")

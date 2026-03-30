@@ -1,0 +1,1948 @@
+{
+  "getRxAnalyticDataFn12": {
+    "owner": "RxAnalyticsController@getRxAnalyticDataFn12_top20GroupsData",
+    "endpoints": [
+      "/getRxAnalyticDataFn12",
+      "/v1/getRxAnalyticDataFn12"
+    ]
+  },
+  "getRxAnalyticDataFn2": {
+    "owner": "RxAnalyticsController@getRxAnalyticDataFn2_memberData",
+    "endpoints": [
+      "/getRxAnalyticDataFn2",
+      "/v1/getRxAnalyticDataFn2"
+    ]
+  },
+  "getRxAnalyticDataFn3": {
+    "owner": "RxAnalyticsController@getRxAnalyticDataFn3_policyData",
+    "endpoints": [
+      "/getRxAnalyticDataFn3",
+      "/v1/getRxAnalyticDataFn3"
+    ]
+  },
+  "getRxAnalyticDataFn4": {
+    "owner": "RxAnalyticsController@getRxAnalyticDataFn4_enrOverviewData",
+    "endpoints": [
+      "/getRxAnalyticDataFn4",
+      "/v1/getRxAnalyticDataFn4"
+    ]
+  },
+  "getRxAnalyticDataFn5": {
+    "owner": "RxAnalyticsController@getRxAnalyticDataFn5_effMembersByYearData",
+    "endpoints": [
+      "/getRxAnalyticDataFn5",
+      "/v1/getRxAnalyticDataFn5"
+    ]
+  },
+  "getRxAnalyticDataFn6": {
+    "owner": "RxAnalyticsController@getRxAnalyticDataFn6_effMembersByMonthData",
+    "endpoints": [
+      "/getRxAnalyticDataFn6",
+      "/v1/getRxAnalyticDataFn6"
+    ]
+  },
+  "getRxAnalyticDataFn7": {
+    "owner": "RxAnalyticsController@getRxAnalyticDataFn7_actMemberByStateData",
+    "endpoints": [
+      "/getRxAnalyticDataFn7",
+      "/v1/getRxAnalyticDataFn7"
+    ]
+  },
+  "getRxAnalyticDataFn8": {
+    "owner": "RxAnalyticsController@getRxAnalyticDataFn8_top20AgentsData",
+    "endpoints": [
+      "/getRxAnalyticDataFn8",
+      "/v1/getRxAnalyticDataFn8"
+    ]
+  },
+  "getRxAnalyticDataFn9": {
+    "owner": "RxAnalyticsController@getRxAnalyticDataFn9",
+    "endpoints": [
+      "/getRxAnalyticDataFn9",
+      "/v1/getRxAnalyticDataFn9"
+    ]
+  },
+  "getScheduleCommission": {
+    "owner": "AutoCommissionPaymentController@get_schedule_commission",
+    "endpoints": [
+      "/getScheduleCommission"
+    ]
+  },
+  "{val}": {
+    "owner": "InvoiceController@getScheduleList",
+    "endpoints": [
+      "/getScheduleList/{val}",
+      "/v1/getScheduleList/{val}",
+      "/v5/getScheduleList/{val}",
+      "/loadTileDate/{val}",
+      "/loadTileDateOnBilling/{val}",
+      "/oneTimeFeeCommission/{val}",
+      "/onetimefeeCommissionForUniqueAgentsMonthly/{id}/{val}",
+      "/overrideCommission/{val}",
+      "/overrideCommissionForUniqueAgentsMonthly/{id}/{val}",
+      "/renderAllInvoicesBasedOnMonthAndType/{val}",
+      "/RenderAllNotProcessedPaymentInfoByFilter/{val}",
+      "/RenderAllOverPaymentInfoByFilter/{val}",
+      "/RenderAllRefundedPaymentInfoByFilter/{val}",
+      "/RenderAllSkippedPaymentInfoByFilter/{val}",
+      "/renderAllUnpaidInvoicesBasedOnMonthAndType/{val}",
+      "/v1/renderInvoicesBasedOnUserID/{val}",
+      "/v2/renderInvoicesBasedOnUserID/{val}",
+      "/v5/renderInvoicesBasedOnUserID/{val}",
+      "/v1/RenderSingleGroupInvoicesBasedOnMonth/{id}/{val}",
+      "/v5/RenderSingleGroupInvoicesBasedOnMonth/{id}/{val}",
+      "/schedulePaymentUsers/{val}",
+      "/v1/schedulePaymentUsers/{val}",
+      "/v5/schedulePaymentUsers/{val}",
+      "/searchGroupBasedOnFilter/{val}",
+      "/searchGroupBasedOnId/{val}"
+    ]
+  },
+  "getScreenshot": {
+    "owner": "AgentsController@getScreenshot",
+    "endpoints": [
+      "/getScreenshot"
+    ]
+  },
+  "getSelfPayments": {
+    "owner": "PaymentController@getSelfPayments",
+    "endpoints": [
+      "/v1/getSelfPayments"
+    ]
+  },
+  "{id}": {
+    "owner": "CommissionController@getSkippedPlansForAgentsCommissionConf",
+    "endpoints": [
+      "/getSkippedPlansForAgentsCommissionConf/{id}",
+      "/getTableColumnListById/{id}",
+      "/v1/getTableColumnListById/{id}",
+      "GET /getTierBasedCommissionConf/{id}",
+      "/get-group-invoice-payment-details/{id}",
+      "/v1/get-group-invoice-payment-details/{id}",
+      "/v5/get-group-invoice-payment-details/{id}",
+      "/v1/groupInfo/{id}",
+      "/LastMonthlatefeeDetails/{id}",
+      "/v1/LastMonthlatefeeDetails/{id}",
+      "/v5/LastMonthlatefeeDetails/{id}",
+      "/oneTimeFeeCommissionDetails/{val?}/{id}",
+      "/overrideCommissionDetails/{val?}/{id}",
+      "/v1/renderAffiliateConfig/{id}",
+      "/v1/renderAgentAffiliateConfig/{id}",
+      "/v1/renderAgentBasedOnCarrier/{id}",
+      "/v1/renderAgentCommissionConfig/{id}",
+      "/v1/renderAgentCommissionHistory/{id}",
+      "/v1/renderAgentDownlines/{id}",
+      "/renderAgentDownlinesAllInfo/{id}",
+      "/v1/renderAgentPolicies/{id}",
+      "/v1/renderAgentsCommissionStatementsAPP/{date}/{id}",
+      "/v2/renderAgentsCommissionStatementsAPP/{date}/{id}",
+      "/renderAgentScreenshotDetails/{id}",
+      "/v1/renderAgentScreenshotDetails/{id}",
+      "/v1/renderAgentsMonthlyCommissionPayments/{id}",
+      "/v2/renderAgentsMonthlyCommissionPayments/{id}",
+      "/v1/renderAgentsMonthlyOtherCommissionPayments/{id}",
+      "/v2/renderAgentsMonthlyOtherCommissionPayments/{id}",
+      "/renderAgentThruId/{id}",
+      "/v1/RenderAgentUplinesFromAgentUplinesDb/{id}",
+      "/renderAllDatesOfthisMonth/{id}",
+      "/renderAllNotProcessedPayments_details/{id}",
+      "/renderAllPaymentInfoBasedOnId/{id}",
+      "/v1/renderAllPaymentInfoBasedOnInvoiceId/{id}",
+      "/v5/renderAllPaymentInfoBasedOnInvoiceId/{id}",
+      "/renderAllPaymentInfoByFile/{id}",
+      "/renderAllProcessedPayments_details/{id}",
+      "/renderCommissionTotal/{val}/{id}",
+      "/v1/RenderGroupIdBasedOnMonthAndType/{id}",
+      "/v1/renderGroupInvoice/{id}",
+      "/renderGroupScreenshotDetails/{id}",
+      "/v1/renderGroupScreenshotDetails/{id}",
+      "/v1/renderInvoiceProducts/{id}",
+      "/v1/renderInvoicesBasedOnID/{id}",
+      "/renderPaymentInfoBasedOnPaymentId/{id}",
+      "/renderPaymentTillDateBasedonPolicyId/{id}",
+      "/renderPrice/{id}",
+      "/v1/RenderRecursiveDownlines/{id}",
+      "/renderScreenshotDetails/{id}",
+      "/v1/renderScreenshotDetails/{id}",
+      "/renderUserScreenshotDetails/{id}",
+      "/v1/renderUserScreenshotDetails/{id}",
+      "/secure-image/{disk}/{id}",
+      "/showFileStatus/{id}",
+      "/updateAssocConfig/{id}",
+      "/updateCarryForwardAmountForPaymentReprocess/{id}",
+      "/v1/updateCarryForwardAmountForPaymentReprocess/{id}",
+      "/v5/updateCarryForwardAmountForPaymentReprocess/{id}",
+      "/v1/updatePaidtoInvoice/{id}",
+      "/updateSendEmailInvoice/{id}",
+      "/v1/userInfo/{id}",
+      "/ut1/{id}",
+      "/voidPayment/{id}",
+      "/v1/voidPayment/{id}",
+      "/v5/voidPayment/{id}",
+      "/v1/whitelistAccount/{id}"
+    ]
+  },
+  "{tablename}": {
+    "owner": "DynamicReportGeneratorController@getTableColumns",
+    "endpoints": [
+      "/v1/GetTableColumns/{tablename}"
+    ]
+  },
+  "getTemplateDetails": {
+    "owner": "TemplateController@template_details",
+    "endpoints": [
+      "/getTemplateDetails"
+    ]
+  },
+  "getUserInfo": {
+    "owner": "Closure@unknown",
+    "endpoints": [
+      "/v1/getUserInfo"
+    ]
+  },
+  "{invDate}": {
+    "owner": "InvoiceController@getGroupInvoiceDetails",
+    "endpoints": [
+      "/get-group-invoice-details/{id}/{invDate}",
+      "/get-unpaid-invoices-of-group/{id}/{invDate}",
+      "/v1/get-group-invoice-details/{id}/{invDate}",
+      "/v5/get-group-invoice-details/{id}/{invDate}"
+    ]
+  },
+  "schedule-paystand-pay-group": {
+    "owner": "InvoiceController@makePaystandPaymentGroup",
+    "endpoints": [
+      "/v1/schedule-paystand-pay-group"
+    ]
+  },
+  "groups": {
+    "owner": "HomeController@groupManagement",
+    "endpoints": [
+      "/groups"
+    ]
+  },
+  "{group_id}": {
+    "owner": "AgentsController@groupAgents",
+    "endpoints": [
+      "/groupAgents/{group_id}",
+      "/GroupDetails/{group_id}"
+    ]
+  },
+  "{gid}": {
+    "owner": "GroupsController@groupPlanFees",
+    "endpoints": [
+      "/GroupFees/{gid}"
+    ]
+  },
+  "{groupInvoiceId}": {
+    "owner": "InvoiceGenerationController@regenerateGroupInvoice",
+    "endpoints": [
+      "/v1/groupInvoiceRegeneration/{groupInvoiceId}",
+      "/regenerateGroupInvoice/{groupInvoiceId}"
+    ]
+  },
+  "send-invoice-email": {
+    "owner": "InvoiceController@sendInvoiceEmail",
+    "endpoints": [
+      "/v1/send-invoice-email"
+    ]
+  },
+  "sync-invoice": {
+    "owner": "PaymentController@syncPaymentToInvoice",
+    "endpoints": [
+      "/sync-invoice",
+      "/v1/sync-invoice",
+      "/v5/sync-invoice"
+    ]
+  },
+  "import-bulk-invoices": {
+    "owner": "BulkPaymentController@importBulkInvoices",
+    "endpoints": [
+      "/import-bulk-invoices"
+    ]
+  },
+  "{bill_date}": {
+    "owner": "PaymentValidationController@getInvoiceCountForMonth",
+    "endpoints": [
+      "/invoice-count/{year_month}/{bill_date}"
+    ]
+  },
+  "invoice-payment-shift": {
+    "owner": "InvoiceController@shiftInvoicePayment",
+    "endpoints": [
+      "/invoice-payment-shift"
+    ]
+  },
+  "unpaid-invoice-alert": {
+    "owner": "InvoiceController@payInvoicesAlert",
+    "endpoints": [
+      "/unpaid-invoice-alert"
+    ]
+  },
+  "{effective_date}": {
+    "owner": "InvoiceController@checkInvoiceForPaidOrProcessing",
+    "endpoints": [
+      "/check-invoice-paid-processing/{policyId}/{effective_date}"
+    ]
+  },
+  "get-invoice-details": {
+    "owner": "InvoiceController@getInvoiceInfo",
+    "endpoints": [
+      "/get-invoice-details"
+    ]
+  },
+  "get-invoice-history": {
+    "owner": "InvoiceController@getInvoiceHistory",
+    "endpoints": [
+      "/get-invoice-history"
+    ]
+  },
+  "{invoice_id}": {
+    "owner": "InvoiceController@getInvoiceHistoryDetail",
+    "endpoints": [
+      "/get-invoice-payment-history/{invoice_id}",
+      "/v1/invoice-waive-fee-log/{invoice_id}",
+      "/v1/invoice-schedule-payment-log/{invoice_id}",
+      "/v5/invoice-waive-fee-log/{invoice_id}",
+      "/v5/invoice-schedule-payment-log/{invoice_id}",
+      "/v1/change-payment-status/{invoice_id}",
+      "/get-payment-summary/{invoice_id}"
+    ]
+  },
+  "daily-policy-analytics": {
+    "owner": "InvoiceDistributionController@getDailyNewPolicyAnalytics",
+    "endpoints": [
+      "/invoice-distribution/daily-policy-analytics"
+    ]
+  },
+  "merge-invoice-pdfs": {
+    "owner": "InvoiceController@mergeInvoicePDFs",
+    "endpoints": [
+      "/v1/merge-invoice-pdfs",
+      "/v5/merge-invoice-pdfs"
+    ]
+  },
+  "generate-single-invoice": {
+    "owner": "InvoiceController@generateSingleInvoice",
+    "endpoints": [
+      "/v1/generate-single-invoice",
+      "/v5/generate-single-invoice"
+    ]
+  },
+  "{invoiceId}": {
+    "owner": "InvoiceGenerationController@regenerateInvoice",
+    "endpoints": [
+      "/v1/regenerate-invoice/{invoiceId}",
+      "/v1/regenerate-paid-invoice/{invoiceId}",
+      "/v5/regenerate-invoice/{invoiceId}",
+      "/v5/regenerate-paid-invoice/{invoiceId}",
+      "/v1/regenerateInvoice/{invoiceId}",
+      "/v5/regenerateInvoice/{invoiceId}"
+    ]
+  },
+  "regenerate-bulk-unpaid-invoice": {
+    "owner": "InvoiceGenerationController@regenerateBulkInvoice",
+    "endpoints": [
+      "/v1/regenerate-bulk-unpaid-invoice",
+      "/v5/regenerate-bulk-unpaid-invoice"
+    ]
+  },
+  "{invoiceIds}": {
+    "owner": "InvoiceGenerationController@regeneratePaidBulkInvoice",
+    "endpoints": [
+      "/v1/regenerate-bulk-paid-invoice/{invoiceIds}",
+      "/v5/regenerate-bulk-paid-invoice/{invoiceIds}"
+    ]
+  },
+  "unsynced-invoice-data": {
+    "owner": "InvoiceReportsController@getUnsyncedInvoiceReport",
+    "endpoints": [
+      "/v2/invoices/unsynced-invoice-data"
+    ]
+  },
+  "duplicate-payment-made-invoices": {
+    "owner": "InvoiceReportsController@getDuplicatePaymentInvoices",
+    "endpoints": [
+      "/v2/invoices/duplicate-payment-made-invoices"
+    ]
+  },
+  "manage_invoice_latefee": {
+    "owner": "InvoiceController@manageInvoiceLatefee",
+    "endpoints": [
+      "/manage_invoice_latefee"
+    ]
+  },
+  "manage_invoice": {
+    "owner": "InvoiceController@manage_invoice",
+    "endpoints": [
+      "/manage_invoice"
+    ]
+  },
+  "{token}": {
+    "owner": "DisputeEmailsViewController@DisputeEmailView",
+    "endpoints": [
+      "/view-invoice-member/{id}/{token}",
+      "/renderInvoicesBasedOnIDAndToken/{id}/{token}",
+      "/renderInvoicesBasedOnToken/{val}/{token}"
+    ]
+  },
+  "invoiceAddNotes": {
+    "owner": "InvoiceController@invoiceAddNotes",
+    "endpoints": [
+      "/v1/invoiceAddNotes"
+    ]
+  },
+  "invoiceGeneration": {
+    "owner": "InvoiceController@invoiceGeneration",
+    "endpoints": [
+      "/v1/invoiceGeneration"
+    ]
+  },
+  "{status}": {
+    "owner": "InvoiceController@invoiceSoftDelete",
+    "endpoints": [
+      "/v1/invoiceSoftDelete/{id}/{status}",
+      "/one-time-payments/{date}/{status}",
+      "/v1/one-time-payments/{date}/{status}",
+      "/v2/one-time-payments/{date}/{status}",
+      "/v1/RenderGroupInvoiceBasedOnMonthAndTypeAndStatus/{val}/{status}",
+      "/v1/RenderInvoicesBasedOnMonthAndTypeAndStatus/{val}/{status}"
+    ]
+  },
+  "keywordListing": {
+    "owner": "TemplateController@keyword_listing",
+    "endpoints": [
+      "/keywordListing"
+    ]
+  },
+  "LateFeeConfiguration": {
+    "owner": "InvoiceController@lateFeeConfiguration",
+    "endpoints": [
+      "/LateFeeConfiguration"
+    ]
+  },
+  "lateFeeforAllUsers": {
+    "owner": "TemplateController@lateFeeforAllUsers",
+    "endpoints": [
+      "/lateFeeforAllUsers",
+      "/v1/lateFeeforAllUsers"
+    ]
+  },
+  "latefeeinvoiceDetails": {
+    "owner": "OnetimeLatefeeController@latefeeinvoiceDetails",
+    "endpoints": [
+      "/latefeeinvoiceDetails",
+      "/v1/latefeeinvoiceDetails",
+      "/v5/latefeeinvoiceDetails"
+    ]
+  },
+  "listcarriers": {
+    "owner": "AgentsController@listCarriers",
+    "endpoints": [
+      "/v1/listcarriers"
+    ]
+  },
+  "listPaymentMethods": {
+    "owner": "InvoiceController@listPaymentMethods",
+    "endpoints": [
+      "/listPaymentMethods",
+      "/v1/listPaymentMethods",
+      "/v5/listPaymentMethods"
+    ]
+  },
+  "LogicalTableAdd": {
+    "owner": "DynamicReportGeneratorController@LogicalTableAdd",
+    "endpoints": [
+      "/LogicalTableAdd"
+    ]
+  },
+  "login": {
+    "owner": "Closure@unknown",
+    "endpoints": [
+      "/login"
+    ]
+  },
+  "logout": {
+    "owner": "LoginController@logout",
+    "endpoints": [
+      "/logout"
+    ]
+  },
+  "makeCheckPaymentByAdmin": {
+    "owner": "InvoiceController@makeCheckPaymentByAdmin",
+    "endpoints": [
+      "/v1/makeCheckPaymentByAdmin"
+    ]
+  },
+  "makeCommissionPayment": {
+    "owner": "CommissionController@makePayment",
+    "endpoints": [
+      "/v1/makeCommissionPayment"
+    ]
+  },
+  "makeGroupPayment": {
+    "owner": "InvoiceController@makeGroupPayment",
+    "endpoints": [
+      "/makeGroupPayment",
+      "/v1/makeGroupPayment"
+    ]
+  },
+  "makeGroupRefund": {
+    "owner": "InvoiceController@makeGroupRefund",
+    "endpoints": [
+      "/makeGroupRefund",
+      "/v1/makeGroupRefund"
+    ]
+  },
+  "makeOneTimeGroupPaymentResolve": {
+    "owner": "PaymentController@makeOneTimeGroupPaymentResolve",
+    "endpoints": [
+      "/makeOneTimeGroupPaymentResolve",
+      "/v1/makeOneTimeGroupPaymentResolve"
+    ]
+  },
+  "makeOneTimePaymentResolve": {
+    "owner": "PaymentController@makeOneTimePaymentResolve",
+    "endpoints": [
+      "/makeOneTimePaymentResolve",
+      "/v1/makeOneTimePaymentResolve"
+    ]
+  },
+  "makePayment": {
+    "owner": "InvoiceController@makePayment",
+    "endpoints": [
+      "/v1/makePayment"
+    ]
+  },
+  "makePaymentOfGroupInvoices": {
+    "owner": "InvoiceController@makePaymentOfGroupInvoices",
+    "endpoints": [
+      "/makePaymentOfGroupInvoices"
+    ]
+  },
+  "makePaystandPayment": {
+    "owner": "InvoiceController@makePaystandPayment",
+    "endpoints": [
+      "/makePaystandPayment",
+      "/v1/makePaystandPayment",
+      "/v5/makePaystandPayment"
+    ]
+  },
+  "makeRefundPaymentByAdmin": {
+    "owner": "InvoiceController@makeRefundPaymentByAdmin",
+    "endpoints": [
+      "/makeRefundPaymentByAdmin"
+    ]
+  },
+  "makeRefundPaymentByRep": {
+    "owner": "InvoiceController@makeRefundPaymentByRep",
+    "endpoints": [
+      "/v1/makeRefundPaymentByRep",
+      "/v5/makeRefundPaymentByRep"
+    ]
+  },
+  "ManageAgents": {
+    "owner": "AgentsController@agentInfo",
+    "endpoints": [
+      "/ManageAgents"
+    ]
+  },
+  "ManageGroups": {
+    "owner": "GroupsController@groupInfo",
+    "endpoints": [
+      "/ManageGroups"
+    ]
+  },
+  "manageInvoiceLateFeesendEmail": {
+    "owner": "TemplateController@manageInvoiceLateFeesendEmail",
+    "endpoints": [
+      "/manageInvoiceLateFeesendEmail"
+    ]
+  },
+  "manageLogicalReports1": {
+    "owner": "DynamicReportGenerationController@manageLogicalReports",
+    "endpoints": [
+      "/manageLogicalReports1"
+    ]
+  },
+  "manageLogicalTables2": {
+    "owner": "DynamicReportGenerationController@manageLogicalTables",
+    "endpoints": [
+      "/manageLogicalTables2"
+    ]
+  },
+  "{comtype}": {
+    "owner": "CommissionController@monthlyCommissionSummary",
+    "endpoints": [
+      "/monthlyCommissionSummary/{year}/{effdate}/{comtype}"
+    ]
+  },
+  "newcommission": {
+    "owner": "MainDashboardController@dashboardCommission",
+    "endpoints": [
+      "/newcommission"
+    ]
+  },
+  "newMainDashboard": {
+    "owner": "HomeController@newMainDashboard",
+    "endpoints": [
+      "/newMainDashboard"
+    ]
+  },
+  "newpayment": {
+    "owner": "MainDashboardController@dashboardPayment",
+    "endpoints": [
+      "/newpayment"
+    ]
+  },
+  "not_processed_payments": {
+    "owner": "PaymentController@notProcessedPayments",
+    "endpoints": [
+      "/not_processed_payments"
+    ]
+  },
+  "not_processed_payments_details": {
+    "owner": "PaymentController@notProcessedPaymentsdetails",
+    "endpoints": [
+      "/not_processed_payments_details"
+    ]
+  },
+  "send-elist-notification": {
+    "owner": "BulkPaymentController@sendElistNotification",
+    "endpoints": [
+      "/send-elist-notification"
+    ]
+  },
+  "get-notification-failure-list": {
+    "owner": "BulkPaymentController@getNotificationFailureList",
+    "endpoints": [
+      "/get-notification-failure-list"
+    ]
+  },
+  "old-plans": {
+    "owner": "PlansController@index",
+    "endpoints": [
+      "/old-plans"
+    ]
+  },
+  "old-agents": {
+    "owner": "AgentsController@index",
+    "endpoints": [
+      "/old-agents"
+    ]
+  },
+  "old-agentsCommissionReport": {
+    "owner": "AgentsCommissionReport@index",
+    "endpoints": [
+      "/old-agentsCommissionReport"
+    ]
+  },
+  "old-agentsCommissionPaymentsReport": {
+    "owner": "AgentsCommissionReport@agentsCommissionPaymentReport",
+    "endpoints": [
+      "/old-agentsCommissionPaymentsReport"
+    ]
+  },
+  "old-agentsCommissionStatements": {
+    "owner": "AgentsCommissionReport@agentsCommissionStatements",
+    "endpoints": [
+      "/old-agentsCommissionStatements"
+    ]
+  },
+  "old-agentsCommissionMonthlyStatements": {
+    "owner": "AgentsCommissionReport@agentsCommissionMonthlyStatements",
+    "endpoints": [
+      "/old-agentsCommissionMonthlyStatements"
+    ]
+  },
+  "old-affiliatesCommissionReport": {
+    "owner": "AffiliatesCommissionReport@index",
+    "endpoints": [
+      "/old-affiliatesCommissionReport"
+    ]
+  },
+  "old-adminRenderTables": {
+    "owner": "DynamicReportGenerationController@index",
+    "endpoints": [
+      "/old-adminRenderTables"
+    ]
+  },
+  "old-createLogicalReports": {
+    "owner": "DynamicReportGenerationController@queryCreation",
+    "endpoints": [
+      "/old-createLogicalReports"
+    ]
+  },
+  "old-Affiliates": {
+    "owner": "AffiliatesController@index",
+    "endpoints": [
+      "/old-Affiliates"
+    ]
+  },
+  "old-SavedLogicalReports": {
+    "owner": "DynamicReportGenerationController@renderLogicalQuery",
+    "endpoints": [
+      "/old-SavedLogicalReports"
+    ]
+  },
+  "old-Invoices": {
+    "owner": "InvoiceController@index",
+    "endpoints": [
+      "/old-Invoices"
+    ]
+  },
+  "old-GroupInvoices": {
+    "owner": "InvoiceController@groupInvoices",
+    "endpoints": [
+      "/old-GroupInvoices"
+    ]
+  },
+  "old-InvoicedUsers": {
+    "owner": "InvoiceController@invoicedUsers",
+    "endpoints": [
+      "/old-InvoicedUsers"
+    ]
+  },
+  "old-InvoiceScheduler": {
+    "owner": "InvoiceController@invoiceScheduler",
+    "endpoints": [
+      "/old-InvoiceScheduler"
+    ]
+  },
+  "old-InvoiceConfiguration": {
+    "owner": "InvoiceController@invoiceConfiguration",
+    "endpoints": [
+      "/old-InvoiceConfiguration"
+    ]
+  },
+  "old-UploadBankFiles": {
+    "owner": "PaymentController@uploadBankFiles",
+    "endpoints": [
+      "/old-UploadBankFiles"
+    ]
+  },
+  "old-PaymentDashBoard": {
+    "owner": "HomeController@payment",
+    "endpoints": [
+      "/old-PaymentDashBoard"
+    ]
+  },
+  "old-ManageClientsInfo": {
+    "owner": "ClientsController@ManageClientsInfo",
+    "endpoints": [
+      "/old-ManageClientsInfo"
+    ]
+  },
+  "old-ManageGroups": {
+    "owner": "GroupsController@GroupInfo",
+    "endpoints": [
+      "/old-ManageGroups"
+    ]
+  },
+  "old-ManageAgents": {
+    "owner": "AgentsController@manageAgents",
+    "endpoints": [
+      "/old-ManageAgents"
+    ]
+  },
+  "old-InvoicePDFGeneration": {
+    "owner": "InvoiceController@bulkPdfGeneration",
+    "endpoints": [
+      "/old-InvoicePDFGeneration"
+    ]
+  },
+  "old-advancedCommissionConfiguration": {
+    "owner": "CommissionController@advancedCommissionConfiguration",
+    "endpoints": [
+      "/old-advancedCommissionConfiguration"
+    ]
+  },
+  "old-oneTimeFeeCommission": {
+    "owner": "CommissionController@oneTimeFeeCommission",
+    "endpoints": [
+      "/old-oneTimeFeeCommission"
+    ]
+  },
+  "old-overrideCommission": {
+    "owner": "CommissionController@overrideCommission",
+    "endpoints": [
+      "/old-overrideCommission"
+    ]
+  },
+  "old-associationFees": {
+    "owner": "CommissionController@associationFees",
+    "endpoints": [
+      "/old-associationFees"
+    ]
+  },
+  "old-associationCommissionMonthly": {
+    "owner": "CommissionController@associationCommissionMonthly",
+    "endpoints": [
+      "/old-associationCommissionMonthly"
+    ]
+  },
+  "old-settings": {
+    "owner": "SettingsController@settings",
+    "endpoints": [
+      "/old-settings"
+    ]
+  },
+  "old-roles": {
+    "owner": "RolesController@roles",
+    "endpoints": [
+      "/old-roles"
+    ]
+  },
+  "old-newTablesAdd": {
+    "owner": "DynamicReportGenerationController@tablesManagement",
+    "endpoints": [
+      "/old-newTablesAdd"
+    ]
+  },
+  "old-associationConfig": {
+    "owner": "CommissionController@associationConfig",
+    "endpoints": [
+      "/old-associationConfig"
+    ]
+  },
+  "old-manageInvoiceLateFeemanagePermonth": {
+    "owner": "InvoiceController@manageInvoiceLateFeemanagePermonth",
+    "endpoints": [
+      "/old-manageInvoiceLateFeemanagePermonth"
+    ]
+  },
+  "old-onetimepaymentLateFeeDetails": {
+    "owner": "OnetimeLatefeeController@onetimepaymentLateFeeDetails",
+    "endpoints": [
+      "/old-onetimepaymentLateFeeDetails"
+    ]
+  },
+  "onetimeDataFinal": {
+    "owner": "OnetimeLatefeeController@onetimeDataFinal",
+    "endpoints": [
+      "/onetimeDataFinal",
+      "/v1/onetimeDataFinal"
+    ]
+  },
+  "onetimeDataSubmit": {
+    "owner": "OnetimeLatefeeController@onetimeDataSubmit",
+    "endpoints": [
+      "/onetimeDataSubmit",
+      "/v1/onetimeDataSubmit"
+    ]
+  },
+  "onetimepaymentDetails": {
+    "owner": "OnetimeLatefeeController@onetimepaymentDetails",
+    "endpoints": [
+      "/onetimepaymentDetails"
+    ]
+  },
+  "onetimepaymentindex": {
+    "owner": "OnetimeLatefeeController@index",
+    "endpoints": [
+      "/onetimepaymentindex"
+    ]
+  },
+  "onetimePaymentOtpPage": {
+    "owner": "OnetimeLatefeeController@onetimePaymentOtpPage",
+    "endpoints": [
+      "/onetimePaymentOtpPage"
+    ]
+  },
+  "onetimepaymentSuccess": {
+    "owner": "OnetimeLatefeeController@onetimepaymentSuccess",
+    "endpoints": [
+      "/onetimepaymentSuccess"
+    ]
+  },
+  "onetimepaymentverification": {
+    "owner": "OnetimeLatefeeController@onetimepaymentverification",
+    "endpoints": [
+      "/onetimepaymentverification"
+    ]
+  },
+  "onetimepaymentverificationdetails": {
+    "owner": "OnetimeLatefeeController@onetimePaymentVerificationDetails",
+    "endpoints": [
+      "/onetimepaymentverificationdetails"
+    ]
+  },
+  "onetimeReviewDetails": {
+    "owner": "OnetimeLatefeeController@onetimeReviewDetails",
+    "endpoints": [
+      "/onetimeReviewDetails",
+      "/v1/onetimeReviewDetails"
+    ]
+  },
+  "onetimeUpdatedPayment": {
+    "owner": "OnetimeLatefeeController@onetimeUpdatedPayment",
+    "endpoints": [
+      "/onetimeUpdatedPayment"
+    ]
+  },
+  "onetimeverificationAgreement": {
+    "owner": "OnetimeLatefeeController@onetimeverificationAgreement",
+    "endpoints": [
+      "/onetimeverificationAgreement"
+    ]
+  },
+  "{id1}": {
+    "owner": "OnetimeLatefeeController@onetimeverificationcheck",
+    "endpoints": [
+      "/onetimeverificationcheck/{id}/{id1}",
+      "/v1/onetimeverificationcheck/{id}/{id1}"
+    ]
+  },
+  "PaidInvoices": {
+    "owner": "PaymentController@paidInvoices",
+    "endpoints": [
+      "/PaidInvoices"
+    ]
+  },
+  "reset_password": {
+    "owner": "HomeController@reset_password",
+    "endpoints": [
+      "/reset_password"
+    ]
+  },
+  "payAgentCommission": {
+    "owner": "CommissionController@payAgentCommission",
+    "endpoints": [
+      "/payAgentCommission"
+    ]
+  },
+  "payment-validation": {
+    "owner": "PaymentValidationController@runValidationCommand",
+    "endpoints": [
+      "/payment-validation"
+    ]
+  },
+  "get-payment-validation-records": {
+    "owner": "PaymentValidationController@getPaymentValidationRecords",
+    "endpoints": [
+      "/get-payment-validation-records"
+    ]
+  },
+  "process-bulk-payment": {
+    "owner": "BulkPaymentController@processBulkPayment",
+    "endpoints": [
+      "/process-bulk-payment"
+    ]
+  },
+  "get-bulk-payment-processing-status": {
+    "owner": "BulkPaymentController@getBulkPaymentProcessingStatus",
+    "endpoints": [
+      "/get-bulk-payment-processing-status"
+    ]
+  },
+  "check-valid-payment-shift": {
+    "owner": "InvoiceController@checkInvoiceStatusForPaymentShift",
+    "endpoints": [
+      "/check-valid-payment-shift"
+    ]
+  },
+  "fetch-temp-payment-detalis": {
+    "owner": "PaymentController@fetchTempPaymentDetalis",
+    "endpoints": [
+      "/v2/fetch-temp-payment-detalis"
+    ]
+  },
+  "sync-temporary-enroll-payment": {
+    "owner": "PaymentController@syncTemporaryEnrollPayment",
+    "endpoints": [
+      "/v2/sync-temporary-enroll-payment"
+    ]
+  },
+  "paymentstatus": {
+    "owner": "PaymentController@index",
+    "endpoints": [
+      "/paymentstatus"
+    ]
+  },
+  "get-paynote-agents": {
+    "owner": "CommissionController@getAllPaynoteInfo",
+    "endpoints": [
+      "/v1/get-paynote-agents",
+      "/v2/get-paynote-agents"
+    ]
+  },
+  "paypal": {
+    "owner": "PaymentController@payWithpaypal",
+    "endpoints": [
+      "/paypal"
+    ]
+  },
+  "get-pending-enrollments": {
+    "owner": "PendingEnrollmentsController@getPendingEnrollments",
+    "endpoints": [
+      "/v1/get-pending-enrollments"
+    ]
+  },
+  "plans": {
+    "owner": "PlansController', ['except' => ['create', 'edit@index",
+    "endpoints": [
+      "/v1/plans"
+    ]
+  },
+  "{plan}": {
+    "owner": "PlansController', ['except' => ['create', 'edit@show",
+    "endpoints": [
+      "/v1/plans/{plan}"
+    ]
+  },
+  "regenerate-plan-switch-invoices": {
+    "owner": "InvoiceGenerationController@regenerateInvoiceAfterPlanSwitch",
+    "endpoints": [
+      "/regenerate-plan-switch-invoices"
+    ]
+  },
+  "plancats": {
+    "owner": "PlansController@getPlanCat",
+    "endpoints": [
+      "/plancats"
+    ]
+  },
+  "planconfig": {
+    "owner": "PlanConfigurationController', ['except' => ['create', 'edit@index",
+    "endpoints": [
+      "/v1/planconfig"
+    ]
+  },
+  "{planconfig}": {
+    "owner": "PlanConfigurationController', ['except' => ['create', 'edit@show",
+    "endpoints": [
+      "/v1/planconfig/{planconfig}"
+    ]
+  },
+  "{day}": {
+    "owner": "CommissionController@planLevelCommission",
+    "endpoints": [
+      "/v1/planLevelCommission/{val}/{day}",
+      "/v1/planLevelCommissionCarrier/{val}/{day}",
+      "/v1/planLevelCommissionTotal/{val}/{day}",
+      "/v1/planLevelCommissionTotalCarrier/{val}/{day}"
+    ]
+  },
+  "plantags": {
+    "owner": "PlansController@getPlanTags",
+    "endpoints": [
+      "/plantags"
+    ]
+  },
+  "plantypes": {
+    "owner": "PlansController@getPlanTypes",
+    "endpoints": [
+      "/plantypes"
+    ]
+  },
+  "{userId}": {
+    "owner": "InvoiceController@policyDetailAndLatestInvoiceDate",
+    "endpoints": [
+      "/get-policy-invoice-date/{userId}"
+    ]
+  },
+  "priyanka": {
+    "owner": "Closure@unknown",
+    "endpoints": [
+      "/v1/priyanka"
+    ]
+  },
+  "processed_payments": {
+    "owner": "PaymentController@processedPayments",
+    "endpoints": [
+      "/processed_payments"
+    ]
+  },
+  "processed_payments_details": {
+    "owner": "PaymentController@processedpaymentsdetails",
+    "endpoints": [
+      "/processed_payments_details"
+    ]
+  },
+  "{fileName}": {
+    "owner": "QuickBookController@downloadFile",
+    "endpoints": [
+      "/v1/download-qbo-file/{fileName}"
+    ]
+  },
+  "manage_refunds": {
+    "owner": "PaymentController@manageRefunds",
+    "endpoints": [
+      "/manage_refunds"
+    ]
+  },
+  "refunded_payments": {
+    "owner": "PaymentController@refundedPayments",
+    "endpoints": [
+      "/refunded_payments"
+    ]
+  },
+  "refundOverPaymentAfterTerm": {
+    "owner": "AutoRefundOverPayment@refundOverPaymentAfterTerm",
+    "endpoints": [
+      "/v1/refundOverPaymentAfterTerm",
+      "/v5/refundOverPaymentAfterTerm"
+    ]
+  },
+  "regenerateCommissions": {
+    "owner": "CommissionController@regenerateCommissions",
+    "endpoints": [
+      "/regenerateCommissions"
+    ]
+  },
+  "regenerateInvoices": {
+    "owner": "InvoiceGenerationController@regenerateTierChangeInvoices",
+    "endpoints": [
+      "/v1/regenerateInvoices",
+      "/v5/regenerateInvoices"
+    ]
+  },
+  "removeDependentPolicy": {
+    "owner": "ManageClientsController@removeDependentPolicy",
+    "endpoints": [
+      "/removeDependentPolicy"
+    ]
+  },
+  "{date}": {
+    "owner": "CommissionController@renderAffiliateAgentData",
+    "endpoints": [
+      "/v1/renderAffiliateAgentData/{id}/{agent_id}/{date}",
+      "/v1/renderAffiliateData/{id}/{date}",
+      "/renderAgentsCommissionStatements/{date}",
+      "/updateProcessingDate/{id}/{date}"
+    ]
+  },
+  "renderAgents": {
+    "owner": "AgentsController@renderAgents",
+    "endpoints": [
+      "/v1/renderAgents"
+    ]
+  },
+  "renderAgentCutoff": {
+    "owner": "AgentsController@renderAgentCutoff",
+    "endpoints": [
+      "/v1/renderAgentCutoff"
+    ]
+  },
+  "renderAgentsCommissionPayments": {
+    "owner": "CommissionController@renderAgentsCommissionPayments",
+    "endpoints": [
+      "/renderAgentsCommissionPayments"
+    ]
+  },
+  "renderAgentsCommissionPayOuts": {
+    "owner": "CommissionController@renderAgentsCommissionPayOuts",
+    "endpoints": [
+      "/renderAgentsCommissionPayOuts"
+    ]
+  },
+  "{ptdate}": {
+    "owner": "CommissionController@renderAgentsCommissionRegenerationStatements",
+    "endpoints": [
+      "/renderAgentsCommissionRegenerationStatements/{id}/{ptdate}",
+      "/renderSingleProcessedPayments/{val}/{ptdate}"
+    ]
+  },
+  "{aid}": {
+    "owner": "CommissionController@renderAgentsCommissionStatementsAS",
+    "endpoints": [
+      "/v1/renderAgentsCommissionStatementsAS/{date}/{aid}",
+      "/v2/renderAgentsCommissionStatementsAS/{date}/{aid}",
+      "/v1/renderDistinctEndDateMO/{aid}",
+      "/v2/renderDistinctEndDateMO/{aid}",
+      "/v3/renderDistinctEndDateMO/{aid}",
+      "/v5/renderDistinctEndDateMO/{aid}"
+    ]
+  },
+  "renderAllActiveFeeConfigs": {
+    "owner": "InvoiceController@renderAllActiveFeeConfigs",
+    "endpoints": [
+      "/renderAllActiveFeeConfigs"
+    ]
+  },
+  "renderAllInvoicedUser": {
+    "owner": "InvoiceController@renderAllInvoicedUser",
+    "endpoints": [
+      "/v1/renderAllInvoicedUser"
+    ]
+  },
+  "renderAllNotProcessedPayments": {
+    "owner": "InvoiceController@renderAllNotProcessedPayments",
+    "endpoints": [
+      "/renderAllNotProcessedPayments"
+    ]
+  },
+  "{month}": {
+    "owner": "InvoiceController@renderAllPaymentInfoBasedOnMonth",
+    "endpoints": [
+      "/renderAllPaymentInfoBasedOnMonth/{month}"
+    ]
+  },
+  "{method}": {
+    "owner": "InvoiceController@renderAllPaymentInfoByFilter",
+    "endpoints": [
+      "/RenderAllPaymentInfoByFilter/{val}/{method}",
+      "/RenderGroupInvoiceBasedOnMonthAndTypeAndStatusAndMethod/{val}/{status}/{method}",
+      "/RenderInvoicesBasedOnMonthAndTypeAndStatusAndMethod/{val}/{status}/{method}"
+    ]
+  },
+  "renderAllPdf": {
+    "owner": "InvoiceController@renderAllPdf",
+    "endpoints": [
+      "/renderAllPdf"
+    ]
+  },
+  "renderAllProcessedPayments": {
+    "owner": "InvoiceController@renderAllProcessedPayments",
+    "endpoints": [
+      "/renderAllProcessedPayments"
+    ]
+  },
+  "renderAllRefundedPayments": {
+    "owner": "InvoiceController@renderAllRefundedPayments",
+    "endpoints": [
+      "/renderAllRefundedPayments"
+    ]
+  },
+  "renderAllSkippedPayments": {
+    "owner": "InvoiceController@renderAllSkippedPayments",
+    "endpoints": [
+      "/renderAllSkippedPayments"
+    ]
+  },
+  "renderAllUserInfo": {
+    "owner": "UserController@renderAllUserInfo",
+    "endpoints": [
+      "/renderAllUserInfo"
+    ]
+  },
+  "{val?}": {
+    "owner": "CommissionController@renderAssocCommissionInd",
+    "endpoints": [
+      "/renderAssocCommissionInd/{aid}/{id}/{val?}"
+    ]
+  },
+  "RenderBounceFeeConfigs": {
+    "owner": "InvoiceController@renderBounceFeeConfigs",
+    "endpoints": [
+      "/v1/RenderBounceFeeConfigs"
+    ]
+  },
+  "renderDistinctEndDate": {
+    "owner": "InvoiceController@renderDistinctEndDate",
+    "endpoints": [
+      "/renderDistinctEndDate"
+    ]
+  },
+  "renderDistinctYear": {
+    "owner": "CommissionController@renderDistinctYear",
+    "endpoints": [
+      "/renderDistinctYear"
+    ]
+  },
+  "{invdate}": {
+    "owner": "InvoiceController@renderEachInvoicesOfGroup",
+    "endpoints": [
+      "/v1/renderEachInvoicesOfGroup/{gid}/{invdate}",
+      "/v5/renderEachInvoicesOfGroup/{gid}/{invdate}",
+      "/v1/renderGroupInvoicesBasedOnInvoiceDateAndGroupId/{gid}/{invdate}"
+    ]
+  },
+  "{ptDate}": {
+    "owner": "InvoiceController@renderFeeManagementLogsBasedOnPaidThroughDate",
+    "endpoints": [
+      "/renderFeeManagementLogsBasedOnPaidThroughDate/{ptDate}"
+    ]
+  },
+  "{type}": {
+    "owner": "InvoiceController@renderGroupLabels",
+    "endpoints": [
+      "/renderGroupLabels/{date}/{status}/{type}",
+      "/user/password/reset/{type}"
+    ]
+  },
+  "RenderInvoiceOtherConfigs": {
+    "owner": "InvoiceController@renderInvoiceOtherConfigs",
+    "endpoints": [
+      "/v1/RenderInvoiceOtherConfigs"
+    ]
+  },
+  "{pmt?}": {
+    "owner": "InvoiceController@renderInvoicesBasedOnMonthAndType",
+    "endpoints": [
+      "/v1/RenderInvoicesBasedOnMonthAndType/{val}/{inv}/{pmt?}"
+    ]
+  },
+  "{val5}": {
+    "owner": "InvoiceController@renderInvoicesBasedOnMonthAndTypeNew",
+    "endpoints": [
+      "/v1/RenderInvoicesBasedOnMonthAndTypeNew/{val}/{val2}/{val3}/{val4}/{val5}"
+    ]
+  },
+  "{val3}": {
+    "owner": "InvoiceController@renderInvoicesBasedOnOnetimeView",
+    "endpoints": [
+      "/renderInvoicesBasedOnOnetimeView/{val1}/{val2}/{val3}",
+      "/v1/renderInvoicesBasedOnOnetimeView/{val1}/{val2}/{val3}",
+      "/v5/renderInvoicesBasedOnOnetimeView/{val1}/{val2}/{val3}"
+    ]
+  },
+  "renderInvoicesBasedOnUserIDFromSession": {
+    "owner": "InvoiceController@renderInvoicesBasedOnUserIDFromSession",
+    "endpoints": [
+      "/renderInvoicesBasedOnUserIDFromSession"
+    ]
+  },
+  "RenderInvoiceSchedules": {
+    "owner": "InvoiceController@renderInvoiceSchedules",
+    "endpoints": [
+      "/v1/RenderInvoiceSchedules"
+    ]
+  },
+  "renderLastPaidInfoInfoBasedOnId": {
+    "owner": "InvoiceController@renderLastPaidInfoInfoBasedOnId",
+    "endpoints": [
+      "/renderLastPaidInfoInfoBasedOnId"
+    ]
+  },
+  "RenderLateFeeConfigs": {
+    "owner": "InvoiceController@renderLateFeeConfigs",
+    "endpoints": [
+      "/v1/RenderLateFeeConfigs"
+    ]
+  },
+  "{stDate}": {
+    "owner": "InvoiceController@renderPolicyOrInvoiceBasedOnPolicyId",
+    "endpoints": [
+      "/renderPolicyOrInvoiceBasedOnPolicyId/{id}/{ptDate}/{stDate}"
+    ]
+  },
+  "RenderStatementFeeConfigs": {
+    "owner": "InvoiceController@renderStatementFeeConfigs",
+    "endpoints": [
+      "/v1/RenderStatementFeeConfigs"
+    ]
+  },
+  "{level}": {
+    "owner": "AgentsController@renderUplinesAgents",
+    "endpoints": [
+      "/v1/RenderUplinesAgents/{id}/{level}"
+    ]
+  },
+  "renderUserInfoFromSession": {
+    "owner": "PaymentController@renderUserInfoFromSession",
+    "endpoints": [
+      "/renderUserInfoFromSession"
+    ]
+  },
+  "repAnalyticDashboard": {
+    "owner": "AnalyticsController@getRepAnalyticDashboard",
+    "endpoints": [
+      "/repAnalyticDashboard"
+    ]
+  },
+  "Reports": {
+    "owner": "HomeController@reports",
+    "endpoints": [
+      "/Reports"
+    ]
+  },
+  "ReportsForAgents": {
+    "owner": "DynamicReportGenerationController@reportsForAgents",
+    "endpoints": [
+      "/ReportsForAgents"
+    ]
+  },
+  "reprocessOnly": {
+    "owner": "InvoiceController@reprocessOnly",
+    "endpoints": [
+      "/reprocessOnly"
+    ]
+  },
+  "rescheduleCommissionPayInBulk": {
+    "owner": "AutoCommissionPaymentController@rescheduleCommissionPayInBulk",
+    "endpoints": [
+      "/rescheduleCommissionPayInBulk"
+    ]
+  },
+  "revert-validation-action": {
+    "owner": "PaymentValidationController@revertValidationAction",
+    "endpoints": [
+      "/revert-validation-action"
+    ]
+  },
+  "revert-merchant-validation-action": {
+    "owner": "PaymentValidationController@revertMerchantValidationAction",
+    "endpoints": [
+      "/revert-merchant-validation-action"
+    ]
+  },
+  "revertFeeManagementLink": {
+    "owner": "InvoiceController@revertFeeManagementLink",
+    "endpoints": [
+      "/revertFeeManagementLink"
+    ]
+  },
+  "{invoicetype}": {
+    "owner": "PaymentController@revertResolvedPayment",
+    "endpoints": [
+      "/revertResolvedPayment/{id}/{invoicetype}",
+      "/v1/revertResolvedPayment/{id}/{invoicetype}",
+      "/v5/revertResolvedPayment/{id}/{invoicetype}"
+    ]
+  },
+  "get": {
+    "owner": "RolesController@getAllRoles",
+    "endpoints": [
+      "/roles/get",
+      "/v1/roles/get",
+      "/users/get",
+      "/v1/users/get",
+      "/user/sessionValues/get"
+    ]
+  },
+  "create": {
+    "owner": "RolesController@createRole",
+    "endpoints": [
+      "/role/create",
+      "/v1/role/create"
+    ]
+  },
+  "update": {
+    "owner": "RolesController@updateRole",
+    "endpoints": [
+      "/role/update",
+      "/v1/role/update",
+      "/user/role/update",
+      "/v1/user/role/update"
+    ]
+  },
+  "delete": {
+    "owner": "RolesController@deleteRole",
+    "endpoints": [
+      "/role/delete",
+      "/v1/role/delete"
+    ]
+  },
+  "search": {
+    "owner": "RolesController@searchRoutes",
+    "endpoints": [
+      "/routes/search",
+      "/v1/routes/search"
+    ]
+  },
+  "saveAsPdf": {
+    "owner": "InvoiceController@saveAsPdf",
+    "endpoints": [
+      "/saveAsPdf"
+    ]
+  },
+  "SaveBounceFeeConfigs": {
+    "owner": "InvoiceController@saveBounceFeeConfigs",
+    "endpoints": [
+      "/v1/SaveBounceFeeConfigs"
+    ]
+  },
+  "saveChangesAndReproecss": {
+    "owner": "InvoiceController@saveChangesAndReproecss",
+    "endpoints": [
+      "/saveChangesAndReproecss"
+    ]
+  },
+  "SaveInvoice": {
+    "owner": "InvoiceController@saveInvoice",
+    "endpoints": [
+      "/v1/SaveInvoice"
+    ]
+  },
+  "{comments}": {
+    "owner": "InvoiceController@saveInvoiceComments",
+    "endpoints": [
+      "/saveInvoiceComments/{invid}/{comments}",
+      "/v1/saveInvoiceComments/{invid}/{comments}",
+      "/v5/saveInvoiceComments/{invid}/{comments}"
+    ]
+  },
+  "SaveInvoiceOtherConfigs": {
+    "owner": "InvoiceController@saveInvoiceOtherConfigs",
+    "endpoints": [
+      "/v1/SaveInvoiceOtherConfigs"
+    ]
+  },
+  "SaveLateFeeConfigs": {
+    "owner": "InvoiceController@saveLateFeeConfigs",
+    "endpoints": [
+      "/v1/SaveLateFeeConfigs"
+    ]
+  },
+  "SaveStatementFeeConfigs": {
+    "owner": "InvoiceController@saveStatementFeeConfigs",
+    "endpoints": [
+      "/v1/SaveStatementFeeConfigs"
+    ]
+  },
+  "refund-schedule-lists": {
+    "owner": "InvoiceController@refundScheduleLists",
+    "endpoints": [
+      "/v1/refund-schedule-lists",
+      "/v5/refund-schedule-lists"
+    ]
+  },
+  "refund-schedule-process": {
+    "owner": "InvoiceController@processRefundSchedulePayment",
+    "endpoints": [
+      "/v1/refund-schedule-process",
+      "/v5/refund-schedule-process"
+    ]
+  },
+  "screenshots": {
+    "owner": "OnetimeLatefeeController@screenshots",
+    "endpoints": [
+      "/screenshots"
+    ]
+  },
+  "scriptToFillCarriers": {
+    "owner": "AgentsController@scriptToFillCarriers",
+    "endpoints": [
+      "/v1/scriptToFillCarriers"
+    ]
+  },
+  "seamlesschexReturnUrl": {
+    "owner": "OnetimeLatefeeController@seamlesschexReturnUrl",
+    "endpoints": [
+      "/seamlesschexReturnUrl"
+    ]
+  },
+  "sendContractEmail": {
+    "owner": "AgentsController@sendContractEmail",
+    "endpoints": [
+      "/sendContractEmail"
+    ]
+  },
+  "sendEmail": {
+    "owner": "InvoiceController@sendEmail",
+    "endpoints": [
+      "/sendEmail"
+    ]
+  },
+  "sendReceiptEmail": {
+    "owner": "ManageClientsController@sendReceiptEmail",
+    "endpoints": [
+      "/sendReceiptEmail"
+    ]
+  },
+  "setPermissionForLogFile": {
+    "owner": "InvoiceController@setPermissionForLogFile",
+    "endpoints": [
+      "/v1/setPermissionForLogFile",
+      "/v5/setPermissionForLogFile"
+    ]
+  },
+  "save_settings": {
+    "owner": "TemplateController@save_settings",
+    "endpoints": [
+      "/save_settings"
+    ]
+  },
+  "{id3}": {
+    "owner": "OnetimeLatefeeController@setUserVerfySess",
+    "endpoints": [
+      "/setUserVerfySess/{id}/{id2}/{id3}"
+    ]
+  },
+  "skipped_payments": {
+    "owner": "PaymentController@skippedPayments",
+    "endpoints": [
+      "/skipped_payments"
+    ]
+  },
+  "SkipPlansCommissionConf": {
+    "owner": "CommissionController@SkipPlansCommissionConf",
+    "endpoints": [
+      "/SkipPlansCommissionConf"
+    ]
+  },
+  "SkipPlansForAgentsCommissionConf": {
+    "owner": "CommissionController@SkipPlansForAgentsCommissionConf",
+    "endpoints": [
+      "/SkipPlansForAgentsCommissionConf"
+    ]
+  },
+  "StatementFeeConfiguration": {
+    "owner": "InvoiceController@statementFeeConfiguration",
+    "endpoints": [
+      "/StatementFeeConfiguration"
+    ]
+  },
+  "{bill_daate?}": {
+    "owner": "PaymentValidationController@getValidationStatus",
+    "endpoints": [
+      "/get-validation-status/{year_month?}/{bill_daate?}"
+    ]
+  },
+  "get-elist-processing-status": {
+    "owner": "BulkPaymentController@getElistProcessingStatus",
+    "endpoints": [
+      "/get-elist-processing-status"
+    ]
+  },
+  "get-bulk-import-status": {
+    "owner": "BulkPaymentController@getBulkImportStatus",
+    "endpoints": [
+      "/get-bulk-import-status"
+    ]
+  },
+  "StatusUpdateKnowledgeBasedFeed": {
+    "owner": "KnowledgeBaseController@statusUpdateKnowledgeBasedFeed",
+    "endpoints": [
+      "/v1/StatusUpdateKnowledgeBasedFeed"
+    ]
+  },
+  "storeContractDetails": {
+    "owner": "AgentsController@storeContractDetails",
+    "endpoints": [
+      "/storeContractDetails"
+    ]
+  },
+  "storew9ContractDetails": {
+    "owner": "AgentsController@storew9ContractDetails",
+    "endpoints": [
+      "/storew9ContractDetails"
+    ]
+  },
+  "tableColumnlist": {
+    "owner": "DynamicReportGeneratorController@tableColumnlist",
+    "endpoints": [
+      "/tableColumnlist"
+    ]
+  },
+  "fetch-temp-refund-details": {
+    "owner": "PaymentController@fetchTempRefundDetails",
+    "endpoints": [
+      "/v2/fetch-temp-refund-details"
+    ]
+  },
+  "save-template": {
+    "owner": "TemplateController@saveTemplate",
+    "endpoints": [
+      "/save-template"
+    ]
+  },
+  "{id2}": {
+    "owner": "TemplateController@template_edit_view",
+    "endpoints": [
+      "/template_edit_view/{id}/{id2}",
+      "/updateLatefeeBasedOnId/{id1}/{id2}",
+      "/v1/updateLatefeeBasedOnId/{id1}/{id2}",
+      "/v5/updateLatefeeBasedOnId/{id1}/{id2}"
+    ]
+  },
+  "template_details_list": {
+    "owner": "TemplateController@template_details_list",
+    "endpoints": [
+      "/template_details_list"
+    ]
+  },
+  "{id4}": {
+    "owner": "TemplateController@template_display",
+    "endpoints": [
+      "/template_display/{id}/{id2}/{id3}/{id4}"
+    ]
+  },
+  "templateDelete": {
+    "owner": "TemplateController@templateDelete",
+    "endpoints": [
+      "/templateDelete"
+    ]
+  },
+  "templateGetting": {
+    "owner": "TemplateController@template_getting",
+    "endpoints": [
+      "/templateGetting"
+    ]
+  },
+  "templateInsert": {
+    "owner": "TemplateController@templateInsert",
+    "endpoints": [
+      "/templateInsert"
+    ]
+  },
+  "templateUpdate": {
+    "owner": "TemplateController@templateUpdate",
+    "endpoints": [
+      "/templateUpdate"
+    ]
+  },
+  "{userid}": {
+    "owner": "OnetimeLatefeeController@takeScreenShot",
+    "endpoints": [
+      "/testCaptureScreenShot/{invid}/{token}/{userid}",
+      "/v1/testCaptureScreenShot/{invid}/{token}/{userid}"
+    ]
+  },
+  "TotalPublishedKnowledgeBaseTillToday": {
+    "owner": "KnowledgeBaseController@totalPublishedKnowledgeBaseTillToday",
+    "endpoints": [
+      "/v1/TotalPublishedKnowledgeBaseTillToday"
+    ]
+  },
+  "change-pay-type": {
+    "owner": "PolicyController@changePayType",
+    "endpoints": [
+      "/change-pay-type"
+    ]
+  },
+  "UnpaidInvoices": {
+    "owner": "PaymentController@unpaidInvoices",
+    "endpoints": [
+      "/UnpaidInvoices"
+    ]
+  },
+  "UpdateAdvancedCommissionConf": {
+    "owner": "CommissionController@UpdateAdvancedCommissionConf",
+    "endpoints": [
+      "/UpdateAdvancedCommissionConf"
+    ]
+  },
+  "updateAffiliates": {
+    "owner": "AffiliatesController@updateAffiliates",
+    "endpoints": [
+      "/v1/updateAffiliates"
+    ]
+  },
+  "updateAffiliateConfiguration": {
+    "owner": "AffiliatesController@updateAffiliateConfiguration",
+    "endpoints": [
+      "/v1/updateAffiliateConfiguration"
+    ]
+  },
+  "updateAgent": {
+    "owner": "ManageClientsController@updateAgent",
+    "endpoints": [
+      "/updateAgent"
+    ]
+  },
+  "updateAgentCarrierinfo": {
+    "owner": "AgentsController@updateAgentCarrierinfo",
+    "endpoints": [
+      "/v1/updateAgentCarrierinfo"
+    ]
+  },
+  "updateAgentCommissionConfig": {
+    "owner": "AgentsController@updateAgentCommissionConfig",
+    "endpoints": [
+      "/v1/updateAgentCommissionConfig"
+    ]
+  },
+  "updateAgentStatus": {
+    "owner": "AgentsController@updateAgentStatus",
+    "endpoints": [
+      "/updateAgentStatus"
+    ]
+  },
+  "updateBounceFeeConfigs": {
+    "owner": "InvoiceController@updateBounceFeeConfigs",
+    "endpoints": [
+      "/v1/updateBounceFeeConfigs"
+    ]
+  },
+  "updateCarrierInfo": {
+    "owner": "AgentsController@updateCarrierInfo",
+    "endpoints": [
+      "/v1/updateCarrierInfo"
+    ]
+  },
+  "updateGroup": {
+    "owner": "ManageClientsController@updateGroup",
+    "endpoints": [
+      "/updateGroup"
+    ]
+  },
+  "updateInvoiceBasedOnInvoiceId": {
+    "owner": "InvoiceController@updateInvoiceBasedOnInvoiceId",
+    "endpoints": [
+      "/v1/updateInvoiceBasedOnInvoiceId"
+    ]
+  },
+  "updateInvoiceOtherConfigs": {
+    "owner": "InvoiceController@updateInvoiceOtherConfigs",
+    "endpoints": [
+      "/v1/updateInvoiceOtherConfigs"
+    ]
+  },
+  "updateInvoiceSchedules": {
+    "owner": "InvoiceController@updateInvoiceSchedules",
+    "endpoints": [
+      "/v1/updateInvoiceSchedules"
+    ]
+  },
+  "updateLatefeeBasedOnInvoiceId": {
+    "owner": "InvoiceController@updateLatefeeBasedOnInvoiceId",
+    "endpoints": [
+      "/v1/updateLatefeeBasedOnInvoiceId"
+    ]
+  },
+  "updateLatefeeBasedOnInvoicesOfaMonth": {
+    "owner": "InvoiceController@updateLatefeeBasedOnInvoicesOfaMonth",
+    "endpoints": [
+      "/v1/updateLatefeeBasedOnInvoicesOfaMonth"
+    ]
+  },
+  "updateLatefeeBasedOnInvoicesOfaMonthNew": {
+    "owner": "InvoiceController@updateLatefeeBasedOnInvoicesOfaMonthNew",
+    "endpoints": [
+      "/v1/updateLatefeeBasedOnInvoicesOfaMonthNew"
+    ]
+  },
+  "updateLateFeeConfigs": {
+    "owner": "InvoiceController@updateLateFeeConfigs",
+    "endpoints": [
+      "/v1/updateLateFeeConfigs"
+    ]
+  },
+  "UpdateNotPaidPolicy": {
+    "owner": "InvoiceController@updateNotPaidPolicy",
+    "endpoints": [
+      "/UpdateNotPaidPolicy"
+    ]
+  },
+  "updateOneTimeAgentPlan": {
+    "owner": "PlansController@updateOneTimeAgentPlan",
+    "endpoints": [
+      "/v1/updateOneTimeAgentPlan"
+    ]
+  },
+  "UpdateOneTimeCommissionConf": {
+    "owner": "CommissionController@UpdateOneTimeCommissionConf",
+    "endpoints": [
+      "/UpdateOneTimeCommissionConf"
+    ]
+  },
+  "UpdateOverrideCommissionConf": {
+    "owner": "CommissionController@UpdateOverrideCommissionConf",
+    "endpoints": [
+      "/UpdateOverrideCommissionConf"
+    ]
+  },
+  "updatePolicyTier": {
+    "owner": "ManageClientsController@updatePolicyTier",
+    "endpoints": [
+      "/updatePolicyTier"
+    ]
+  },
+  "updatePrimaryAddress": {
+    "owner": "ManageClientsController@updatePrimaryAddress",
+    "endpoints": [
+      "/updatePrimaryAddress"
+    ]
+  },
+  "updateSchedulePayment": {
+    "owner": "InvoiceController@updateSchedulePayment",
+    "endpoints": [
+      "/v1/updateSchedulePayment",
+      "/v5/updateSchedulePayment"
+    ]
+  },
+  "updateStatementFeeConfigs": {
+    "owner": "InvoiceController@updateStatementFeeConfigs",
+    "endpoints": [
+      "/v1/updateStatementFeeConfigs"
+    ]
+  },
+  "UpdateTierBasedCommissionConf": {
+    "owner": "CommissionController@UpdateTierBasedCommissionConf",
+    "endpoints": [
+      "/UpdateTierBasedCommissionConf"
+    ]
+  },
+  "upload": {
+    "owner": "InvoiceController@uploadfiles",
+    "endpoints": [
+      "/upload"
+    ]
+  },
+  "uploadContractPdf": {
+    "owner": "AgentsController@uploadContractPdf",
+    "endpoints": [
+      "/uploadContractPdf"
+    ]
+  },
+  "uploadContractPdfw9": {
+    "owner": "AgentsController@uploadContractPdfw9",
+    "endpoints": [
+      "/uploadContractPdfw9"
+    ]
+  },
+  "view_user_Invoice": {
+    "owner": "InvoiceController@viewUserInvoice",
+    "endpoints": [
+      "/view_user_Invoice"
+    ]
+  },
+  "users": {
+    "owner": "HomeController@userManagement",
+    "endpoints": [
+      "/users"
+    ]
+  },
+  "sessionToken": {
+    "owner": "CheckLoginParamsController@getUserSessionValues",
+    "endpoints": [
+      "/user/sessionToken"
+    ]
+  },
+  "UserHome": {
+    "owner": "InvoiceController@userHome",
+    "endpoints": [
+      "/UserHome"
+    ]
+  },
+  "fetch-usync-temp-payments": {
+    "owner": "PaymentController@fetchUnSyncTempPaymentDetalis",
+    "endpoints": [
+      "/v2/fetch-usync-temp-payments"
+    ]
+  },
+  "{invoiceid}": {
+    "owner": "InvoiceController@createPDFBasedOnInvoiceId",
+    "endpoints": [
+      "/ut2/{invoiceid}"
+    ]
+  },
+  "{agentid}": {
+    "owner": "CommissionController@checkAdvancedConfigurationIsAvaiable",
+    "endpoints": [
+      "/ut3/{pid}/{agentid}"
+    ]
+  },
+  "send-verification-code": {
+    "owner": "LoginController@sendVerificationCode",
+    "endpoints": [
+      "/send-verification-code"
+    ]
+  },
+  "verifyOneTimeSessStatusDestroy": {
+    "owner": "OnetimeLatefeeController@verifyOneTimeSessStatusDestroy",
+    "endpoints": [
+      "/verifyOneTimeSessStatusDestroy"
+    ]
+  },
+  "ViewInvoice": {
+    "owner": "InvoiceController@viewInvoice",
+    "endpoints": [
+      "/ViewInvoice"
+    ]
+  },
+  "waive-fee": {
+    "owner": "InvoiceController@waiveFee",
+    "endpoints": [
+      "/waive-fee"
+    ]
+  },
+  "whitelistAccount": {
+    "owner": "BlackListAccountController@whitelistAccount",
+    "endpoints": [
+      "/whitelistAccount"
+    ]
+  }
+}

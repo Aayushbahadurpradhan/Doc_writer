@@ -935,6 +935,9 @@ def cmd_generate_docs(args):
     print("  Done in {:.1f}s  |  project: {}  |  type: {}".format(
         elapsed, os.path.basename(output_dir), project_type))
     print("  Output -> " + os.path.join(output_dir, "docs"))
+    fe_excel = os.path.join(output_dir, "docs", "frontend", "frontend_detail.xlsx")
+    if os.path.exists(fe_excel):
+        print("  Excel  -> " + fe_excel)
     print("=" * 60 + "\n")
 
 

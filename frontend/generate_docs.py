@@ -28,6 +28,7 @@ Each page .md includes:
   - Unknowns / warnings
 """
 
+import json
 import os
 import re
 import sys
@@ -37,7 +38,8 @@ from typing import Dict, List, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from prompts.frontend_prompts import pages_md_prompt, pages_md_system
+from prompts.frontend_prompts import (pages_md_prompt, pages_md_system,
+                                      undocumented_api_prompt)
 from shared.ai_client import AIConfig, call_ai
 
 
@@ -88,13 +90,15 @@ def generate_pages_md(
     """
     Generate frontend docs organized by route group.
     Pages without a route or whose component file is missing go to undocumented/.
+    Also writes frontend_detail.xlsx with one row per (page, API call).
     """
     output_root = os.path.abspath(output_root)
     os.makedirs(output_root, exist_ok=True)
 
     # ── Group pages ───────────────────────────────────────────────────────────
     groups: Dict[str, List[dict]] = defaultdict(list)
-    all_missing_apis: List[Tuple[str, str]] = []
+    all_missing_apis: List[dict] = []
+    all_excel_rows: List[dict] = []
 
     for page in pages:
         group = _extract_page_group(page)
@@ -103,7 +107,15 @@ def generate_pages_md(
         for api_call in page.get("api_calls", []):
             endpoint = api_call.get("endpoint", "")
             if endpoint and endpoint != "UNKNOWN":
-                all_missing_apis.append((page.get("path", "UNKNOWN"), endpoint))
+                all_missing_apis.append({
+                    "page_path":      page.get("path", "UNKNOWN"),
+                    "page_component": page.get("component", "UNKNOWN"),
+                    "endpoint":       endpoint,
+                    "method":         api_call.get("method", "UNKNOWN"),
+                    "via":            api_call.get("via", "direct"),
+                    "composable":     api_call.get("composable"),
+                    "called_from":    api_call.get("called_from", "UNKNOWN"),
+                })
 
     # ── Generate per-group documentation ─────────────────────────────────────
     sys_msg = pages_md_system()
@@ -124,27 +136,46 @@ def generate_pages_md(
 
             if no_ai or not config.use_ai:
                 content = _skeleton_page(page)
+                all_excel_rows.extend(_build_static_excel_rows(page))
             else:
                 prompt = pages_md_prompt(page)
                 try:
-                    content = call_ai(prompt, config, system=sys_msg, max_tokens=1500)
+                    content = call_ai(prompt, config, system=sys_msg, max_tokens=2000)
                 except Exception as e:
                     content = "[AI failed: {}]".format(str(e)[:80])
                 if not content or content.startswith("[AI failed"):
                     print(f"     [WARN] AI failed - using skeleton")
                     content = _skeleton_page(page)
+                    all_excel_rows.extend(_build_static_excel_rows(page))
+                else:
+                    excel_rows = _parse_excel_data(content)
+                    if excel_rows:
+                        # AI filled placeholders — merge with static fields
+                        _merge_static_fields(page, excel_rows)
+                        all_excel_rows.extend(excel_rows)
+                    else:
+                        all_excel_rows.extend(_build_static_excel_rows(page))
                 if config.delay > 0:
                     time.sleep(config.delay)
 
+            # Strip the EXCEL_DATA comment block before writing markdown
+            md_content = re.sub(
+                r"\n*<!--\s*EXCEL_DATA[\s\S]*?-->", "", content
+            ).rstrip() + "\n"
             os.makedirs(os.path.dirname(page_path), exist_ok=True)
             with open(page_path, "w", encoding="utf-8") as f:
-                f.write(content)
+                f.write(md_content)
 
     # ── Master index ──────────────────────────────────────────────────────────
     _write_frontend_index(groups, output_root)
 
     # ── Undocumented APIs ─────────────────────────────────────────────────────
-    _write_missing_apis(all_missing_apis, output_root)
+    _write_missing_apis(all_missing_apis, output_root, config, no_ai)
+
+    # ── Excel output ──────────────────────────────────────────────────────────
+    excel_path = _write_frontend_excel(all_excel_rows, output_root)
+    if excel_path:
+        print(f"  [EXCEL] Frontend detail -> {excel_path}")
 
     documented   = sum(len(v) for k, v in groups.items() if k != "undocumented")
     undocumented = len(groups.get("undocumented", []))
@@ -153,6 +184,148 @@ def generate_pages_md(
     print(f"     Documented   : {documented} pages")
     if undocumented:
         print(f"     Undocumented : {undocumented} components (no route or file)")
+
+
+def _parse_excel_data(content: str) -> List[dict]:
+    """Extract the EXCEL_DATA JSON array embedded in an AI markdown response."""
+    m = re.search(r"<!--\s*EXCEL_DATA\s*\n([\s\S]*?)\n-->", content)
+    if not m:
+        return []
+    try:
+        rows = json.loads(m.group(1))
+        return rows if isinstance(rows, list) else []
+    except Exception:
+        return []
+
+
+def _merge_static_fields(page: dict, excel_rows: List[dict]) -> None:
+    """Overwrite static fields (route, component_path) from the page dict in-place."""
+    path      = page.get("path", "")
+    comp_file = page.get("file") or page.get("component_file") or ""
+    for row in excel_rows:
+        if not row.get("route"):
+            row["route"] = path
+        if not row.get("component_path"):
+            row["component_path"] = comp_file
+
+
+def _build_static_excel_rows(page: dict) -> List[dict]:
+    """Build Excel rows from static page data — used when AI is disabled or fails."""
+    path        = page.get("path", "UNKNOWN")
+    component   = page.get("component", "UNKNOWN")
+    comp_file   = page.get("file") or page.get("component_file") or ""
+    api_calls   = page.get("api_calls", [])
+    screen_name = (
+        component
+        .replace(".vue", "").replace(".jsx", "").replace(".tsx", "")
+        .replace("_", " ").replace("-", " ")
+    )
+
+    # Use statically-extracted fields when available
+    validation_items  = page.get("validation_rules_static", [])
+    conditional_items = page.get("conditional_logic_static", [])
+    validation_str    = "; ".join(validation_items)  if validation_items  else ""
+    conditional_str   = "; ".join(conditional_items) if conditional_items else ""
+
+    rows = []
+    effective = api_calls or [{}]
+    for call in effective:
+        rows.append({
+            "screen_name":       screen_name,
+            "route":             path,
+            "component_path":    comp_file,
+            "api_endpoint":      call.get("endpoint", ""),
+            "http_method":       call.get("method", ""),
+            "request_payload":   "",
+            "conditional_logic": conditional_str,
+            "validation_rules":  validation_str,
+            "open_questions":    "",
+            "answer_decision":   "",
+            "answered_by":       "",
+            "date_answered":     "",
+        })
+    return rows
+
+
+def _write_frontend_excel(rows: List[dict], output_root: str) -> str:
+    """
+    Write frontend_detail.xlsx with one row per (page, API call).
+
+    Columns match the reference sheet:
+      #, Screen Name, Route / URL, Vue Component Path, API Endpoint,
+      HTTP Method, Request Payload / Query Parameters, Conditional Logic,
+      Validation Rules, Open Questions / Notes, Answer / Decision,
+      Answered By, Date Answered
+    """
+    if not rows:
+        return ""
+    try:
+        import openpyxl
+        from openpyxl.styles import Alignment, Font, PatternFill
+    except ImportError:
+        print("  [WARN] openpyxl not installed — skipping Excel output (pip install openpyxl)")
+        return ""
+
+    HEADERS = [
+        "#",
+        "Screen Name",
+        "Route / URL",
+        "Vue Component Path",
+        "API Endpoint",
+        "HTTP Method",
+        "Request Payload / Query Parameters",
+        "Conditional Logic",
+        "Validation Rules",
+        "Open Questions / Notes",
+        "Answer / Decision",
+        "Answered By",
+        "Date Answered",
+    ]
+    COL_WIDTHS = [5, 30, 25, 42, 48, 13, 48, 48, 42, 42, 42, 15, 15]
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Frontend Detail"
+
+    header_fill = PatternFill("solid", fgColor="1F4E79")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    wrap_top    = Alignment(wrap_text=True, vertical="top")
+
+    for col_idx, header in enumerate(HEADERS, 1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.fill      = header_fill
+        cell.font      = header_font
+        cell.alignment = wrap_top
+
+    for col_idx, width in enumerate(COL_WIDTHS, 1):
+        col_letter = ws.cell(row=1, column=col_idx).column_letter
+        ws.column_dimensions[col_letter].width = width
+
+    for row_num, row in enumerate(rows, 1):
+        ws.append([
+            row_num,
+            row.get("screen_name", ""),
+            row.get("route", ""),
+            row.get("component_path", ""),
+            row.get("api_endpoint", ""),
+            row.get("http_method", ""),
+            row.get("request_payload", ""),
+            row.get("conditional_logic", ""),
+            row.get("validation_rules", ""),
+            row.get("open_questions", ""),
+            row.get("answer_decision", ""),
+            row.get("answered_by", ""),
+            row.get("date_answered", ""),
+        ])
+        for col_idx in range(1, len(HEADERS) + 1):
+            ws.cell(row=row_num + 1, column=col_idx).alignment = wrap_top
+
+    ws.freeze_panes = "B2"
+    ws.auto_filter.ref = f"A1:{ws.cell(row=1, column=len(HEADERS)).column_letter}1"
+
+    excel_path = os.path.join(output_root, "frontend_detail.xlsx")
+    wb.save(excel_path)
+    return excel_path
 
 
 def _write_group_readme(group: str, pages: List[dict], group_dir: str) -> None:
@@ -252,40 +425,241 @@ def _write_frontend_index(groups: Dict[str, List[dict]], output_root: str) -> No
         f.write("_Generated by doc_writer_\n")
 
 
-def _write_missing_apis(api_list: List[Tuple[str, str]], output_root: str) -> None:
-    """Write undocumented APIs called by frontend pages into undocumented/missing_apis.md."""
+def _safe_endpoint_filename(endpoint: str) -> str:
+    """Convert /api/v1/userinfo → api_v1_userinfo.md"""
+    safe = endpoint.strip("/").replace("/", "_").replace("-", "_")
+    safe = re.sub(r"[^\w]", "_", safe).strip("_") or "unknown"
+    safe = re.sub(r"_+", "_", safe)
+    return safe + ".md"
+
+
+def _write_missing_apis(
+    api_list: List[dict],
+    output_root: str,
+    config: "AIConfig",
+    no_ai: bool = False,
+) -> None:
+    """
+    Write undocumented API documentation.
+
+    Creates:
+      undocumented/missing_apis.md        — master index grouped by endpoint
+      undocumented/apis/<endpoint>.md    — per-endpoint detail page (AI or skeleton)
+    """
     undoc_dir = os.path.join(output_root, "undocumented")
-    os.makedirs(undoc_dir, exist_ok=True)
+    apis_dir  = os.path.join(undoc_dir, "apis")
+    os.makedirs(apis_dir, exist_ok=True)
 
     # Filter out UNKNOWN endpoints
-    real_apis = [(page, ep) for page, ep in api_list if ep and ep != "UNKNOWN"]
+    real_apis = [a for a in api_list if a.get("endpoint") and a["endpoint"] != "UNKNOWN"]
     if not real_apis:
         return
 
+    # Group by endpoint → list of full usage dicts
+    api_map: Dict[str, List[dict]] = defaultdict(list)
+    for usage in real_apis:
+        api_map[usage["endpoint"]].append(usage)
+
+    sys_msg = pages_md_system()
+
+    # ── Per-endpoint individual files ──────────────────────────────────────────
+    endpoint_files: Dict[str, str] = {}   # endpoint -> filename (relative to apis/)
+
+    for endpoint in sorted(api_map.keys()):
+        usages    = api_map[endpoint]
+        safe_name = _safe_endpoint_filename(endpoint)
+        ep_path   = os.path.join(apis_dir, safe_name)
+        endpoint_files[endpoint] = safe_name
+
+        print(f"  [UNDOC API] {endpoint} -> undocumented/apis/{safe_name}")
+
+        if no_ai or not config.use_ai:
+            content = _skeleton_undoc_api(endpoint, usages)
+        else:
+            prompt = undocumented_api_prompt(endpoint, usages)
+            try:
+                content = call_ai(prompt, config, system=sys_msg, max_tokens=1400)
+            except Exception as e:
+                content = _skeleton_undoc_api(endpoint, usages)
+            if not content or content.startswith("[AI failed"):
+                content = _skeleton_undoc_api(endpoint, usages)
+            if config.delay > 0:
+                time.sleep(config.delay)
+
+        with open(ep_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+    # ── Master missing_apis.md ─────────────────────────────────────────────────
     missing_path = os.path.join(undoc_dir, "missing_apis.md")
-
-    # Group by endpoint
-    api_map: Dict[str, List[str]] = defaultdict(list)
-    for page_path, endpoint in real_apis:
-        api_map[endpoint].append(page_path)
-
     with open(missing_path, "w", encoding="utf-8") as f:
-        f.write("# Missing Backend Documentation\n\n")
+        f.write("# Undocumented API Endpoints\n\n")
         f.write(
             "These API endpoints are called by frontend pages but do not have "
             "corresponding backend documentation.\n\n"
         )
-        f.write(f"**Total**: {len(api_map)} endpoints\n\n")
+        f.write(f"**Total**: {len(api_map)} unique endpoints\n\n")
+        f.write("| Endpoint | Methods | Pages Using It | Detail |\n")
+        f.write("|----------|---------|----------------|--------|\n")
+        for endpoint in sorted(api_map.keys()):
+            usages       = api_map[endpoint]
+            pages_using  = sorted(set(u["page_path"] for u in usages))
+            methods      = sorted(set(u["method"] for u in usages))
+            safe_name    = endpoint_files[endpoint]
+            methods_str  = ", ".join(f"`{m}`" for m in methods)
+            f.write(
+                f"| `{endpoint}` | {methods_str} | {len(pages_using)} "
+                f"| [detail](apis/{safe_name}) |\n"
+            )
+        f.write("\n---\n\n")
 
         for endpoint in sorted(api_map.keys()):
-            pages = sorted(set(api_map[endpoint]))
-            f.write(f"## `{endpoint}`\n\n")
-            f.write(f"Called from {len(pages)} page(s):\n\n")
-            for page in pages:
-                f.write(f"- `{page}`\n")
-            f.write("\n")
+            usages      = api_map[endpoint]
+            safe_name   = endpoint_files[endpoint]
+            pages_using = sorted(set(u["page_path"] for u in usages))
+            methods     = sorted(set(u["method"] for u in usages))
+
+            f.write(f"## [`{endpoint}`](apis/{safe_name})\n\n")
+            f.write(f"- **Methods**: {', '.join(f'`{m}`' for m in methods)}\n")
+            f.write(f"- **Used by {len(pages_using)} page(s)**:\n\n")
+            f.write("  | Page / Route | Method | Source | Transport |\n")
+            f.write("  |-------------|--------|--------|-----------|\n")
+            for u in usages:
+                comp_note = (
+                    f"via `{u['composable']}()`"
+                    if u.get("composable")
+                    else f"in `{u.get('called_from', '?')}`"
+                )
+                f.write(
+                    f"  | `{u['page_path']}` | `{u['method']}` "
+                    f"| {comp_note} | {u['via']} |\n"
+                )
+            f.write(f"\n[View full detail](apis/{safe_name})\n\n")
 
         f.write("---\n")
+
+    # ── Append API cross-reference to undocumented README ─────────────────────
+    readme_path = os.path.join(undoc_dir, "README.md")
+    if os.path.exists(readme_path):
+        with open(readme_path, "a", encoding="utf-8") as f:
+            f.write("\n## Undocumented API Endpoints\n\n")
+            f.write(
+                f"{len(api_map)} API endpoint(s) are called by frontend pages "
+                f"but have no backend documentation. "
+                f"See [missing_apis.md](missing_apis.md) for the full list "
+                f"and individual files in [apis/](apis/) for per-endpoint detail.\n\n"
+            )
+            f.write("| Endpoint | Used by (pages) | Methods |\n")
+            f.write("|----------|-----------------|---------|\n")
+            for endpoint in sorted(api_map.keys()):
+                usages      = api_map[endpoint]
+                pages_using = sorted(set(u["page_path"] for u in usages))
+                methods     = sorted(set(u["method"] for u in usages))
+                safe_name   = endpoint_files[endpoint]
+                methods_str = ", ".join(f"`{m}`" for m in methods)
+                pages_str   = ", ".join(f"`{p}`" for p in pages_using[:3])
+                if len(pages_using) > 3:
+                    pages_str += f" (+{len(pages_using) - 3} more)"
+                f.write(
+                    f"| [`{endpoint}`](apis/{safe_name}) | {pages_str} | {methods_str} |\n"
+                )
+            f.write("\n")
+
+
+def _skeleton_undoc_api(endpoint: str, usages: List[dict]) -> str:
+    """No-AI fallback: generate structured markdown for an undocumented API endpoint."""
+    pages_using = sorted(set(u["page_path"] for u in usages))
+    methods     = sorted(set(u["method"] for u in usages))
+    methods_str = ", ".join(f"`{m}`" for m in methods)
+
+    lines = [
+        f"# Undocumented API: `{endpoint}`\n\n",
+        f"> **Warning**: This endpoint is called by the frontend but has no backend documentation.\n\n",
+        f"## Summary\n\n",
+        f"| Field | Value |\n",
+        f"|-------|-------|\n",
+        f"| **Endpoint** | `{endpoint}` |\n",
+        f"| **HTTP Methods** | {methods_str} |\n",
+        f"| **Used by** | {len(pages_using)} page(s) |\n\n",
+        f"## Where It Is Used\n\n",
+        f"| Page / Route | Method | Source | Transport |\n",
+        f"|-------------|--------|--------|-----------|\n",
+    ]
+    for u in usages:
+        comp_note = (
+            f"via `{u['composable']}()`"
+            if u.get("composable")
+            else f"in `{u.get('called_from', 'UNKNOWN')}`"
+        )
+        lines.append(
+            f"| `{u['page_path']}` | `{u['method']}` | {comp_note} | {u['via']} |\n"
+        )
+
+    lines.append("\n## Pages Detail\n\n")
+    for page_path in pages_using:
+        page_usages = [u for u in usages if u["page_path"] == page_path]
+        lines.append(f"### `{page_path}`\n\n")
+        for u in page_usages:
+            comp_note = (
+                f"Called via composable `{u['composable']}()`"
+                if u.get("composable")
+                else f"Called directly in `{u.get('called_from', 'UNKNOWN')}`"
+            )
+            lines.append(
+                f"- {comp_note} | Method: `{u['method']}` | Transport: `{u['via']}`\n"
+            )
+        lines.append("\n")
+
+    # Infer purpose from endpoint name
+    ep_lower = endpoint.lower()
+    inferences = []
+    if any(x in ep_lower for x in ["list", "all", "index"]):
+        inferences.append("Returns a list/collection of resources")
+    if any(x in ep_lower for x in ["detail", "show", "get", "info", "view"]):
+        inferences.append("Returns detailed information about a specific resource")
+    if any(x in ep_lower for x in ["create", "add", "store", "new"]):
+        inferences.append("Creates a new resource")
+    if any(x in ep_lower for x in ["update", "edit", "modify", "save"]):
+        inferences.append("Updates an existing resource")
+    if any(x in ep_lower for x in ["delete", "remove", "destroy"]):
+        inferences.append("Deletes a resource")
+    if any(x in ep_lower for x in ["auth", "login", "logout"]):
+        inferences.append("Handles authentication")
+    if any(x in ep_lower for x in ["user", "profile", "account"]):
+        inferences.append("Handles user/account data")
+    if any(x in ep_lower for x in ["report", "stats", "analytics", "summary", "dashboard"]):
+        inferences.append("Provides reporting or analytics data")
+    if any(x in ep_lower for x in ["upload", "import", "export", "download"]):
+        inferences.append("Handles file upload/download or data import/export")
+
+    lines.append("## How It Can Be Used\n\n")
+    lines.append(
+        f"_Based on endpoint name `{endpoint}`, this API likely:_\n\n"
+    )
+    if inferences:
+        for inf in inferences:
+            lines.append(f"- {inf}\n")
+    else:
+        lines.append(f"- Handles `{methods[0] if methods else 'HTTP'}` requests\n")
+        lines.append(f"- Used by {len(pages_using)} frontend page(s)\n")
+
+    lines.append(
+        f"\n**Example call (axios)**:\n"
+        f"```js\n"
+        f"// {methods[0] if methods else 'GET'} {endpoint}\n"
+        f"const response = await axios.{(methods[0] if methods else 'GET').lower()}"
+        f"('{endpoint}');\n"
+        f"```\n\n"
+    )
+
+    lines.append(
+        "## Documentation Status\n\n"
+        "> This endpoint has no backend documentation. To resolve:\n"
+        "> 1. Locate the backend controller/route that handles this path\n"
+        "> 2. Add it to the backend API docs\n"
+        "> 3. Re-run doc generation to update this page\n\n"
+        "---\n"
+    )
+    return "".join(lines)
 
 
 def _skeleton_page(page: dict) -> str:
@@ -398,6 +772,12 @@ def _skeleton_page(page: dict) -> str:
         f"{composables_md}\n\n"
         f"## Backend API Dependencies\n\n"
         f"{api_md}\n\n"
+        f"## Request Payload / Query Parameters\n\n"
+        f"_Static extraction only — run with AI enabled to infer payload fields._\n\n"
+        f"## Conditional Logic\n\n"
+        f"_Static extraction only — run with AI enabled to infer conditional rendering rules._\n\n"
+        f"## Validation Rules\n\n"
+        f"_Static extraction only — run with AI enabled to infer validation rules._\n\n"
         f"## State Management\n\n"
         f"{state_md}\n\n"
         f"## Warnings\n\n"

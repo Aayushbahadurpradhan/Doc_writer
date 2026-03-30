@@ -393,7 +393,94 @@ def _build_example_url(path: str, base_url: str = "http://localhost:8000") -> st
     return f"{base_url}{result}"
 
 
-# ─── STEP 6: State Management Detection ───────────────────────────────────────
+# ─── STEP 6: Validation Rule Extraction ─────────────────────────────────────
+
+def _extract_validation_rules(content: str) -> List[str]:
+    """
+    Statically extract form/input validation rules from Vue component source.
+    Covers:
+      - VeeValidate  rules="required|email"  or  :rules="[v => !!v]"  or  rules: { required: true }
+      - Vuelidate    validations: { field: { required, email } }
+      - Manual       rules: { fieldName: [...] }  or  v-validate patterns
+      - Yup/Zod      .required() .email() .min() .max() chains
+    """
+    found: List[str] = []
+
+    # VeeValidate string rules: rules="required|email|min:6"
+    for m in re.finditer(r'\brules\s*=\s*["\']([\w|: ,]+)["\']', content):
+        val = m.group(1).strip()
+        if val:
+            found.append(val)
+
+    # VeeValidate / manual object: rules: { fieldName: [required, minLength] }
+    for m in re.finditer(r'\brules\s*:\s*\{([^}]{1,400})\}', content, re.DOTALL):
+        block = m.group(1)
+        # Extract field: [...] or field: rule entries
+        for fm in re.finditer(r'([a-zA-Z_][\w]*)\s*:\s*([^\n,}]+)', block):
+            field = fm.group(1)
+            rule  = fm.group(2).strip().rstrip(',')
+            if field not in ('true', 'false', 'null', 'undefined'):
+                found.append(f"{field}: {rule}")
+
+    # Vuelidate: validations: { field: { required, minLength: minLength(6) } }
+    vm = re.search(r'validations\s*[:(]\s*\{([^}]{1,600})\}', content, re.DOTALL)
+    if vm:
+        for fm in re.finditer(r'([a-zA-Z_][\w]*)\s*:\s*\{([^}]+)\}', vm.group(1), re.DOTALL):
+            field   = fm.group(1)
+            ruleset = re.sub(r'\s+', ' ', fm.group(2)).strip()
+            found.append(f"{field}: {{ {ruleset} }}")
+
+    # Yup / Zod chains: .required() .email() .min() .max() .matches()
+    for m in re.finditer(
+        r'["\']([a-zA-Z_][\w]*)["\']\s*:\s*[\w.]+(?:\.(?:required|email|min|max|matches|url|uuid)\([^)]*\))+',
+        content,
+    ):
+        found.append(m.group(0).split(':', 1)[1].strip())
+
+    # Deduplicate preserving order
+    seen: set = set()
+    result: List[str] = []
+    for r in found:
+        if r not in seen:
+            seen.add(r)
+            result.append(r)
+    return result[:20]
+
+
+# ─── STEP 7: Conditional Logic Extraction ────────────────────────────────────
+
+def _extract_conditional_logic(content: str) -> List[str]:
+    """
+    Statically extract conditional display/rendering rules from Vue template.
+    Covers: v-if, v-else-if, v-show, computed ternaries, and :disabled/:readonly.
+    """
+    found: List[str] = []
+    seen: set = set()
+
+    def _add(label: str) -> None:
+        label = re.sub(r'\s+', ' ', label).strip()
+        if label and label not in seen and len(found) < 15:
+            seen.add(label)
+            found.append(label)
+
+    # v-if / v-else-if / v-show
+    for m in re.finditer(r'v-(if|else-if|show)=["\']([^"\']{3,120})["\']', content):
+        directive = m.group(1)
+        condition = m.group(2).strip()
+        _add(f"v-{directive}: {condition}")
+
+    # Computed ternaries in template: {{ condition ? 'a' : 'b' }}
+    for m in re.finditer(r'\{\{([^}]{5,120}\?[^}]{2,80}:[^}]{2,80})\}\}', content):
+        _add("ternary: " + m.group(1).strip())
+
+    # :disabled / :readonly attribute bindings
+    for m in re.finditer(r':(disabled|readonly|hidden)=["\']([^"\']{3,80})["\']', content):
+        _add(f"{m.group(1)}: {m.group(2).strip()}")
+
+    return found
+
+
+# ─── STEP 8: State Management Detection ───────────────────────────────────────
 
 def _detect_state_management(content: str, composable_names: List[str]) -> List[str]:
     """
@@ -553,6 +640,10 @@ def detect_pages(project_root: str) -> List[dict]:
                     f"Dynamic endpoint in {call.get('called_from', '?')}"
                 )
 
+        # ── Static Excel fields (no-AI fallback) ────────────────────────────
+        validation_static    = _extract_validation_rules(content) if content else []
+        conditional_static   = _extract_conditional_logic(content) if content else []
+
         pages.append({
             "path":                route.get("path", "UNKNOWN"),
             "component":           component,
@@ -568,6 +659,9 @@ def detect_pages(project_root: str) -> List[dict]:
             "api_calls":           api_calls,
             "state_management":    state_mgmt,
             "unknowns":            unknowns,
+            "validation_rules_static":   validation_static,
+            "conditional_logic_static":  conditional_static,
+            "code_snippet":              content[:3000] if content else "",
         })
 
     return pages

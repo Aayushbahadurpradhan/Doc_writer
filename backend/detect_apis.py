@@ -14,7 +14,7 @@ Supports:
 import json
 import os
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -49,7 +49,20 @@ def _parse_routes_from_file(content: str, filepath: str) -> List[dict]:
     namespace_stack:  List[str]       = ["App\\Http\\Controllers"]
 
     # Normalise line endings
-    lines = content.replace("\r\n", "\n").split("\n")
+    content = content.replace("\r\n", "\n")
+
+    # ── Pre-processing: collapse multi-line Route::group([...]) onto one line ─
+    # e.g. Route::group([\n  'namespace' => 'Api\V1',\n], function() {
+    # becomes Route::group([ 'namespace' => 'Api\V1', ], function() {
+    # This ensures the line-by-line parser can see namespace/prefix/middleware.
+    content = re.sub(
+        r"(Route::(?:group|prefix|middleware)\s*\([^{]+)",
+        lambda m: re.sub(r"\s+", " ", m.group(0)),
+        content,
+        flags=re.DOTALL,
+    )
+
+    lines = content.split("\n")
 
     for line in lines:
         stripped = line.strip()
@@ -216,16 +229,31 @@ _SKIP_MODELS = {
 
 _MODEL_RE = re.compile(
     r"\b([A-Z][a-zA-Z0-9]+)::"
-    r"(?:where|find|findOrFail|create|update|delete|all|get|first|"
-    r"firstOrFail|firstOrCreate|updateOrCreate|upsert|insert|"
-    r"count|sum|avg|max|min|exists|paginate|with|has|whereHas)\b"
+    r"(?:query|where|find|findOrFail|create|update|delete|all|get|first|"
+    r"firstOrFail|firstOrCreate|updateOrCreate|upsert|insert|select|"
+    r"count|sum|avg|max|min|exists|paginate|with|has|whereHas|"
+    r"orderBy|groupBy|join|leftJoin|rightJoin|raw)\b"
 )
 _RAW_SQL_RE = re.compile(
     r"DB::(select|statement|insert|update|delete)\s*\(\s*['\"](.+?)['\"]",
     re.DOTALL | re.I
 )
-_DB_TABLE_RE = re.compile(r"DB::table\s*\(\s*['\"](\w+)['\"]\s*\)")
-_SERVICE_RE  = re.compile(r"\$this->(\w+)->|self\.(\w+)\.")
+_DB_TABLE_RE    = re.compile(r"DB::table\s*\(\s*['\"]([\w]+)['\"]\s*\)")
+_DB_CONN_RE     = re.compile(r"DB::connection\s*\(\s*['\"]([\w]+)['\"]\s*\)")
+_SERVICE_RE     = re.compile(r"\$this->(\w+)->|self\.(\w+)\.")
+# Static Helper / Facade calls (e.g. AgentHelper::getList(), SomeService::call())
+_HELPER_RE      = re.compile(
+    r"\b([A-Z][a-zA-Z0-9]*(?:Helper|Facade|Service|Manager|Handler|Repository|Factory|Provider|Sync))"
+    r"::(\w+)\s*\("
+)
+# new SomeRepository() / new SomeService() instantiation
+_REPO_INST_RE   = re.compile(
+    r"new\s+([A-Z][a-zA-Z0-9]*(?:Repository|Service|Manager|Provider|Handler|Factory))\s*\("
+)
+# ->get() / ->first() / ->exists() etc. on query builder chains (model-agnostic)
+_QUERY_CHAIN_RE = re.compile(
+    r"->(get|first|firstOrFail|paginate|exists|count|sum|avg|max|min|all|toArray|pluck|value)\s*\("
+)
 _VALIDATION_RE = re.compile(
     r"(?:validate|validateWith)\s*\(\s*\[([^\]]+)\]", re.DOTALL
 )
@@ -255,13 +283,99 @@ def _extract_function_body(content: str, func_name: str) -> str:
     return content[start: pos - 1].strip()
 
 
+_FC_SKIP_DIRS = {
+    "vendor", "node_modules", ".git", "storage", "__pycache__",
+    "tests", "bootstrap", "public", "resources", "database",
+    "config", "logs", "docs", "api_audit",
+}
+
+
 def _find_controller_file(ctrl: str, project_root: str) -> Optional[str]:
+    r"""
+    Locate a PHP controller file.
+
+    Strategy 1 (preferred): convert namespace to filesystem path.
+      App\Http\Controllers\Api\V1\AuthController
+      -> {root}/app/Http/Controllers/Api/V1/AuthController.php
+
+    Strategy 2 (fallback): walk PHP files, score candidates by how many
+      namespace segments appear in their path (most specific wins).
+    """
+    if not ctrl or ctrl in ("Closure", "Unknown"):
+        return None
+
     bare = ctrl.split("\\")[-1].lower()
-    for dirpath, _, files in os.walk(project_root):
+
+    # ── Strategy 1: namespace → path ─────────────────────────────────────────
+    if "\\" in ctrl:
+        parts = ctrl.split("\\")
+        # Laravel convention: top-level 'App' maps to <root>/app/
+        if parts[0].lower() == "app":
+            parts[0] = "app"
+        rel = os.path.join(*parts) + ".php"
+        candidate = os.path.join(project_root, rel)
+        if os.path.exists(candidate):
+            return candidate
+
+        # Sub-path under app/Http/Controllers
+        try:
+            ci = next(i for i, p in enumerate(parts) if p.lower() == "controllers")
+            sub = parts[ci + 1:]
+            if sub:
+                base = os.path.join(project_root, "app", "Http", "Controllers")
+                candidate2 = os.path.join(base, *sub) + ".php"
+                if os.path.exists(candidate2):
+                    return candidate2
+        except StopIteration:
+            pass
+
+    # ── Strategy 2: scored directory walk ────────────────────────────────────
+    ctrl_lower_parts = [p.lower() for p in ctrl.split("\\")]
+    matches: List[Tuple[int, str]] = []
+
+    for dirpath, dirs, files in os.walk(project_root):
+        # Prune irrelevant top-level dirs to speed up the walk
+        dirs[:] = [d for d in dirs if d.lower() not in _FC_SKIP_DIRS]
         for fname in files:
-            if fname.endswith(".php") and fname.lower().replace(".php", "") == bare:
-                return os.path.join(dirpath, fname)
-    return None
+            if not fname.endswith(".php"):
+                continue
+            if fname.lower().replace(".php", "") != bare:
+                continue
+            fpath = os.path.join(dirpath, fname)
+            path_lower = fpath.lower().replace("\\", "/")
+            score = sum(1 for p in ctrl_lower_parts if p in path_lower)
+            matches.append((score, fpath))
+
+    if not matches:
+        return None
+    return max(matches, key=lambda x: x[0])[1]
+
+
+def _find_all_controller_files(ctrl: str, project_root: str) -> List[str]:
+    """
+    Return ALL candidate controller files sorted by score (best first).
+    Used for fallback when the top-scoring file doesn't contain the method.
+    """
+    if not ctrl:
+        return []
+    bare = ctrl.split("\\")[-1].lower()
+    ctrl_lower_parts = [p.lower() for p in ctrl.split("\\")]
+    matches: List[Tuple[int, str]] = []
+
+    for dirpath, dirs, files in os.walk(project_root):
+        dirs[:] = [d for d in dirs if d.lower() not in _FC_SKIP_DIRS]
+        for fname in files:
+            if not fname.endswith(".php"):
+                continue
+            if fname.lower().replace(".php", "") != bare:
+                continue
+            fpath = os.path.join(dirpath, fname)
+            path_lower = fpath.lower().replace("\\", "/")
+            score = sum(1 for p in ctrl_lower_parts if p in path_lower)
+            matches.append((score, fpath))
+
+    matches.sort(key=lambda x: x[0], reverse=True)
+    return [m[1] for m in matches]
 
 
 def _trace_controller(body: str) -> dict:
@@ -288,23 +402,79 @@ def _trace_controller(body: str) -> dict:
         steps.append({"type": "validation", "detail": fr})
         validation.setdefault("_form_request", fr)
 
-    # Service calls
+    # Service calls via injected property (double-arrow: $this->svc->method)
+    seen_svc: set = set()
     for svc, svc2 in _SERVICE_RE.findall(body):
         name = svc or svc2
-        steps.append({"type": "service_call", "target": name})
+        if name not in seen_svc:
+            seen_svc.add(name)
+            steps.append({"type": "service_call", "target": name})
 
-    # Eloquent models
+    # Static Helper / Facade / Service calls (e.g. AgentHelper::getList())
+    seen_helpers: set = set()
+    for m in _HELPER_RE.finditer(body):
+        cls, method = m.group(1), m.group(2)
+        if cls not in _SKIP_MODELS and cls not in seen_helpers:
+            seen_helpers.add(cls)
+            steps.append({"type": "helper_call", "class": cls, "method": method})
+
+    # new Repository/Service() instantiation
+    for m in _REPO_INST_RE.finditer(body):
+        cls = m.group(1)
+        if cls not in seen_helpers:
+            seen_helpers.add(cls)
+            steps.append({"type": "service_call", "target": cls})
+
+    # Eloquent models (::where, ::find, ::query, ::create, etc.)
+    seen_models: set = set()
     for m in _MODEL_RE.finditer(body):
         model = m.group(1)
         if model not in _SKIP_MODELS:
             op = m.group(0).split("::")[-1]
-            queries.append({"type": "eloquent", "model": model, "operation": op})
-            steps.append({"type": "db_query", "query_type": "eloquent", "model": model})
+            key = (model, op)
+            if key not in seen_models:
+                seen_models.add(key)
+                queries.append({"type": "eloquent", "model": model, "operation": op})
+                steps.append({"type": "db_query", "query_type": "eloquent", "model": model})
 
     # DB::table
     for m in _DB_TABLE_RE.finditer(body):
-        queries.append({"type": "query_builder", "table": m.group(1), "operation": "UNKNOWN"})
-        steps.append({"type": "db_query", "query_type": "query_builder", "table": m.group(1)})
+        tbl = m.group(1)
+        queries.append({"type": "query_builder", "table": tbl, "operation": "UNKNOWN"})
+        steps.append({"type": "db_query", "query_type": "query_builder", "table": tbl})
+
+    # DB::connection
+    for m in _DB_CONN_RE.finditer(body):
+        queries.append({"type": "query_builder", "connection": m.group(1), "operation": "UNKNOWN"})
+        steps.append({"type": "db_query", "query_type": "query_builder", "connection": m.group(1)})
+
+        # Any other ClassName::method() static call not yet caught above
+    # Covers custom Eloquent scopes (User::findByEmail), model factories, etc.
+    _STATIC_SKIP_SFXS = (
+        "Helper", "Facade", "Service", "Manager", "Handler",
+        "Repository", "Factory", "Provider", "Sync", "Request",
+        "Response", "Controller", "Middleware", "Event", "Job",
+        "Rule", "Resource", "Collection", "Listener",
+    )
+    _BROAD_STATIC_RE = re.compile(r"\b([A-Z][a-zA-Z0-9]+)::(\w+)\s*\(")
+    seen_all = set(seen_models) | seen_helpers | set(_SKIP_MODELS)
+    for m in _BROAD_STATIC_RE.finditer(body):
+        cls, method = m.group(1), m.group(2)
+        if cls in seen_all or method in ("class", ""):
+            continue
+        seen_all.add(cls)
+        if any(cls.endswith(s) for s in _STATIC_SKIP_SFXS):
+            steps.append({"type": "helper_call", "class": cls, "method": method})
+        else:
+            queries.append({"type": "eloquent", "model": cls, "operation": method})
+            steps.append({"type": "db_query", "query_type": "eloquent", "model": cls})
+
+    # Query builder terminal methods when no model detected yet (anonymous chains)
+    if not queries and _QUERY_CHAIN_RE.search(body):
+        for m in _QUERY_CHAIN_RE.finditer(body):
+            steps.append({"type": "db_query", "query_type": "query_builder",
+                          "operation": m.group(1)})
+        queries.append({"type": "query_builder", "operation": "UNKNOWN"})
 
     # Raw SQL
     for m in _RAW_SQL_RE.finditer(body):
@@ -394,6 +564,18 @@ def detect_apis(project_root: str) -> List[dict]:
             continue
 
         body = _extract_function_body(read_file(ctrl_file), func)
+
+        # Fallback: if best-scoring file doesn't contain the method, try all other candidates
+        if not body:
+            for alt_file in _find_all_controller_files(ctrl, project_root):
+                if alt_file == ctrl_file:
+                    continue
+                alt_body = _extract_function_body(read_file(alt_file), func)
+                if alt_body:
+                    body = alt_body
+                    ctrl_file = alt_file
+                    break
+
         if not body:
             route.update({"steps": [], "validation": {}, "queries": [],
                           "errors": [], "response": {}, "unknowns": [f"Body of {func}() could not be extracted"]})

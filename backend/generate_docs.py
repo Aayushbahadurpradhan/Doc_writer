@@ -76,7 +76,7 @@ def detect_domain(method: str, path: str, handler: str = "") -> str:
       /acm/get-sync-neura         -> acm
       /v1/manage-groups           -> group  (plural normalised)
     """
-    clean = path.lower().strip("/")
+    clean = path.lower().strip().strip("/")
 
     # Skip version and api prefix segments
     parts = [
@@ -467,7 +467,9 @@ def generate_all_docs(
 
     for domain in domains:
         domain_routes = domain_map[domain]
-        ddir          = os.path.join(docs_root, domain)
+        # Sanitize domain name: strip whitespace, replace spaces/special chars
+        safe_domain = re.sub(r'[^\w-]', '_', domain.strip()).strip('_') or 'general'
+        ddir = os.path.join(docs_root, safe_domain)
         os.makedirs(ddir, exist_ok=True)
 
         # Find routes pending for business.md
