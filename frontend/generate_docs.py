@@ -239,10 +239,6 @@ def _build_static_excel_rows(page: dict) -> List[dict]:
             "request_payload":   "",
             "conditional_logic": conditional_str,
             "validation_rules":  validation_str,
-            "open_questions":    "",
-            "answer_decision":   "",
-            "answered_by":       "",
-            "date_answered":     "",
         })
     return rows
 
@@ -276,12 +272,8 @@ def _write_frontend_excel(rows: List[dict], output_root: str) -> str:
         "Request Payload / Query Parameters",
         "Conditional Logic",
         "Validation Rules",
-        "Open Questions / Notes",
-        "Answer / Decision",
-        "Answered By",
-        "Date Answered",
     ]
-    COL_WIDTHS = [5, 30, 25, 42, 48, 13, 48, 48, 42, 42, 42, 15, 15]
+    COL_WIDTHS = [5, 30, 25, 42, 48, 13, 48, 48, 42]
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -312,10 +304,6 @@ def _write_frontend_excel(rows: List[dict], output_root: str) -> str:
             row.get("request_payload", ""),
             row.get("conditional_logic", ""),
             row.get("validation_rules", ""),
-            row.get("open_questions", ""),
-            row.get("answer_decision", ""),
-            row.get("answered_by", ""),
-            row.get("date_answered", ""),
         ])
         for col_idx in range(1, len(HEADERS) + 1):
             ws.cell(row=row_num + 1, column=col_idx).alignment = wrap_top
@@ -752,9 +740,23 @@ def _skeleton_page(page: dict) -> str:
         api_md = "_Could not scan — source file not found on disk_"
 
     # ── Unknowns / warnings ───────────────────────────────────────────────────
+    validation_static  = page.get("validation_rules_static", [])
+    conditional_static = page.get("conditional_logic_static", [])
+
     unknowns_md = (
         "\n".join(f"- {u}" for u in unknowns)
         if unknowns else "_None_"
+    )
+
+    validation_md = (
+        "\n".join(f"- {r}" for r in validation_static)
+        if validation_static
+        else "_Static extraction only \u2014 run with AI enabled to infer validation rules._"
+    )
+    conditional_md = (
+        "\n".join(f"- {r}" for r in conditional_static)
+        if conditional_static
+        else "_Static extraction only \u2014 run with AI enabled to infer conditional rendering rules._"
     )
 
     return (
@@ -775,9 +777,9 @@ def _skeleton_page(page: dict) -> str:
         f"## Request Payload / Query Parameters\n\n"
         f"_Static extraction only — run with AI enabled to infer payload fields._\n\n"
         f"## Conditional Logic\n\n"
-        f"_Static extraction only — run with AI enabled to infer conditional rendering rules._\n\n"
+        f"{conditional_md}\n\n"
         f"## Validation Rules\n\n"
-        f"_Static extraction only — run with AI enabled to infer validation rules._\n\n"
+        f"{validation_md}\n\n"
         f"## State Management\n\n"
         f"{state_md}\n\n"
         f"## Warnings\n\n"

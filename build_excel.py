@@ -488,10 +488,6 @@ FE_COLUMNS = [
     ("Request Payload /\nQuery Parameters", 38),
     ("Conditional Logic",                  32),
     ("Validation Rules",                   32),
-    ("Open Questions / Notes",             30),
-    ("Answer / Decision",                  28),
-    ("Answered By",                        14),
-    ("Date Answered",                      14),
 ]
 FE_NUM_COLS = len(FE_COLUMNS)
 
@@ -584,17 +580,35 @@ def parse_frontend_md(path):
         if warnings.lower() in ("none","_none_"):
             warnings = ""
 
+        rp_m = re.search(r"## Request Payload.*?\n+(.*?)(?=\n##|\Z)", sec, re.DOTALL)
+        request_payload = rp_m.group(1).strip() if rp_m else ""
+        if request_payload.lower().startswith("_"):
+            request_payload = ""
+
+        cl_m = re.search(r"## Conditional Logic.*?\n+(.*?)(?=\n##|\Z)", sec, re.DOTALL)
+        conditional_logic = cl_m.group(1).strip() if cl_m else ""
+        if conditional_logic.lower().startswith("_"):
+            conditional_logic = ""
+
+        vr_m = re.search(r"## Validation Rules.*?\n+(.*?)(?=\n##|\Z)", sec, re.DOTALL)
+        validation_rules = vr_m.group(1).strip() if vr_m else ""
+        if validation_rules.lower().startswith("_"):
+            validation_rules = ""
+
         pages.append({
-            "route":       route or "UNKNOWN",
-            "component":   component,
-            "source_file": source_file,
-            "layout":      layout,
-            "example_url": example_url,
-            "children":    children,
-            "composables": composables,
-            "api_calls":   api_calls,
-            "state_mgmt":  state_mgmt,
-            "warnings":    warnings,
+            "route":             route or "UNKNOWN",
+            "component":         component,
+            "source_file":       source_file,
+            "layout":            layout,
+            "example_url":       example_url,
+            "children":          children,
+            "composables":       composables,
+            "api_calls":         api_calls,
+            "state_mgmt":        state_mgmt,
+            "warnings":          warnings,
+            "request_payload":   request_payload,
+            "conditional_logic": conditional_logic,
+            "validation_rules":  validation_rules,
         })
     return pages
 
@@ -646,17 +660,19 @@ def build_frontend_workbook(fe_groups_data, today_str):
         row_num   = 4
         total_api = 0
         for page in pages:
-            api_calls   = page.get("api_calls", [])
-            screen_name = page.get("component","") or page.get("route","UNKNOWN")
-            route       = page.get("route","UNKNOWN")
-            source_file = page.get("source_file","—") or "—"
+            api_calls         = page.get("api_calls", [])
+            screen_name       = page.get("component","") or page.get("route","UNKNOWN")
+            route             = page.get("route","UNKNOWN")
+            source_file       = page.get("source_file","—") or "—"
+            request_payload   = page.get("request_payload","") or ""
+            conditional_logic = page.get("conditional_logic","") or ""
+            validation_rules  = page.get("validation_rules","") or ""
 
             if api_calls:
                 for j, call in enumerate(api_calls):
                     total_api += 1
                     method   = call.get("method","?")
                     endpoint = call.get("endpoint","?")
-                    payload  = call.get("source","—") or "—"
                     c_http   = HTTP_COLOR.get(method.upper(), C_FE_ROW_ODD)
                     is_odd   = (row_num % 2 == 0)
                     row_bg   = C_FE_ROW_ODD if is_odd else C_FE_ROW_EVEN
@@ -669,13 +685,9 @@ def build_frontend_workbook(fe_groups_data, today_str):
                     _c(4,  source_file, color=C_TEXT_GREY)
                     _c(5,  endpoint,    bold=True, color=C_TEXT_BLUE)
                     _c(6,  method, bg=c_http, bold=True, h="center")
-                    _c(7,  payload if payload != "—" else "")
-                    _c(8,  "")
-                    _c(9,  "")
-                    _c(10, "")
-                    _c(11, "", bg=C_ANSWER)
-                    _c(12, "")
-                    _c(13, "")
+                    _c(7,  request_payload)
+                    _c(8,  conditional_logic)
+                    _c(9,  validation_rules)
                     row_num += 1
             else:
                 ws.row_dimensions[row_num].height = 36
@@ -690,11 +702,6 @@ def build_frontend_workbook(fe_groups_data, today_str):
                 _c(7,  "—")
                 _c(8,  "")
                 _c(9,  "")
-                _c(10, "No API calls detected — verify or fill manually",
-                   color=C_TEXT_AMBER)
-                _c(11, "", bg=C_ANSWER)
-                _c(12, "")
-                _c(13, "")
                 missing_fe.append({
                     "group":   group_name,
                     "screen":  screen_name,

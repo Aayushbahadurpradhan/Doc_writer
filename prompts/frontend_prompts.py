@@ -85,7 +85,6 @@ def pages_md_prompt(json_data: dict) -> str:
             "request_payload": "<<fill: list all query params / body fields with type and required status>>",
             "conditional_logic": "<<fill: describe conditional UI rendering, field visibility rules, business conditions>>",
             "validation_rules": "<<fill: list all form/input validation rules in this component>>",
-            "open_questions": "<<fill: list ambiguous items, undocumented behavior, or things to verify with BA/dev>>",
         })
 
     return (
@@ -94,8 +93,7 @@ def pages_md_prompt(json_data: dict) -> str:
         f"Analyze the COMPONENT SOURCE CODE below to fill in:\n"
         f"  - Request Payload / Query Parameters: all API call params/body fields\n"
         f"  - Conditional Logic: field visibility rules, business conditions, show/hide logic\n"
-        f"  - Validation Rules: all form/input validation rules\n"
-        f"  - Open Questions: ambiguous items, undocumented behavior to verify\n\n"
+        f"  - Validation Rules: all form/input validation rules\n\n"
         f"INPUT JSON:\n{json.dumps(page, indent=2)}\n\n"
         f"COMPONENT SOURCE CODE (analyze for payload fields, validation, conditional logic):\n"
         f"```\n{code_snippet[:3000]}\n```\n\n"

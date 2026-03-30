@@ -40,3 +40,5 @@ Thumbs.db
 # Project specific
 doc_output/
 output/
+*.xlsx
+*.xls
