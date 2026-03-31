@@ -180,12 +180,20 @@ def _collect_mtimes(root, exts):
 
 
 def _has_changed(root, exts, state_file):
+    """Return True when source files have changed since last run.
+
+    IMPORTANT: the mtime snapshot is NOT saved here.  Call
+    _commit_mtimes(root, exts, state_file) only AFTER doc generation
+    succeeds so that a failed/interrupted run always re-processes.
+    """
     prev = _load_mtimes(state_file)
     curr = _collect_mtimes(root, exts)
-    if prev != curr:
-        _save_mtimes(state_file, curr)
-        return True
-    return False
+    return prev != curr
+
+
+def _commit_mtimes(root, exts, state_file):
+    """Persist the current mtime snapshot.  Call only on successful completion."""
+    _save_mtimes(state_file, _collect_mtimes(root, exts))
 
 
 def _page_filename(route_path):
@@ -842,6 +850,9 @@ def cmd_generate_docs(args):
             routes_to_doc, docs_backend, config,
             no_ai=no_ai, force=args.force, state_dir=state_dir,
         )
+        # Only commit the mtime snapshot AFTER docs have been generated
+        # successfully, so an interrupted run always re-processes.
+        _commit_mtimes(backend_root, {".php"}, be_state)
 
         if not args.skip_validation:
             print("\n  Step 3: Validating completeness...")
@@ -891,6 +902,9 @@ def cmd_generate_docs(args):
             pages, docs_frontend, config,
             no_ai=no_ai,
         )
+        # Only commit the mtime snapshot AFTER docs have been generated
+        # successfully, so an interrupted run always re-processes.
+        _commit_mtimes(frontend_root, {".js", ".ts", ".jsx", ".tsx", ".vue"}, fe_state)
 
     # ── Execute in order ─────────────────────────────────────────────────────
 
@@ -988,6 +1002,8 @@ def _apply_placeholder_apis(pages, placeholder_file):
         for api_call in page.get("api_calls", []):
             if api_call.get("endpoint") not in ("UNKNOWN", "UNKNOWN (dynamic)"):
                 continue
+            # Try every placeholder entry — do NOT break after the first match
+            # so pages with multiple dynamic calls all get resolved.
             for fn_name, entry in placeholders.items():
                 if fn_name == "{val}":
                     continue  # wildcard key — skip to avoid over-annotation
@@ -1000,7 +1016,7 @@ def _apply_placeholder_apis(pages, placeholder_file):
                         api_call["resolved_via"]        = "ai_placeholder_apis.json"
                         api_call["owner"]               = owner
                         resolved += 1
-                        break
+                        break  # matched this call — move to next api_call
 
     if resolved:
         print("  [placeholder] Resolved {} dynamic endpoint(s) via ai_placeholder_apis.json".format(

@@ -55,17 +55,42 @@ def pages_md_prompt(json_data: dict) -> str:
     unknowns_md    = "\n".join(f"- {u}" for u in unknowns) or "None"
 
     api_md_lines = []
-    for call in api_calls:
-        composable  = call.get("composable")
-        via         = call.get("via", "direct")
-        source      = f"via `{composable}()`" if composable else f"`{call.get('called_from', 'UNKNOWN')}`"
-        api_md_lines.append(
-            f"- Endpoint: `{call.get('endpoint', 'UNKNOWN')}`\n"
-            f"  - Method: {call.get('method', 'UNKNOWN')}\n"
-            f"  - Source: {source}\n"
-            f"  - Transport: {via}"
-        )
-    api_md = "\n".join(api_md_lines) or "None detected"
+    for i, call in enumerate(api_calls, 1):
+        composable   = call.get("composable")
+        via          = call.get("via", "direct")
+        via_child    = call.get("via_child")
+        source       = f"via `{composable}()`" if composable else f"`{call.get('called_from', 'UNKNOWN')}`"
+        if via_child:
+            source += f" (child: `{via_child}`)"
+        purpose      = call.get("purpose", "")
+        trigger      = call.get("trigger", "")
+        trigger_name = call.get("trigger_name", "")
+        comment      = call.get("comment", "")
+        fn_name      = call.get("function_name", "")
+        dynamic      = call.get("dynamic", False)
+
+        trigger_str  = ""
+        if trigger_name:
+            trigger_str = f"  - Trigger: `{trigger_name}` ({trigger})"
+        elif trigger and trigger != "unknown":
+            trigger_str = f"  - Trigger: {trigger}"
+
+        purpose_str  = f"  - Purpose: {purpose}" if purpose and purpose != "inline call" else ""
+        comment_str  = f"  - Code comment: `{comment}`" if comment else ""
+        fn_str       = f"  - In function: `{fn_name}()`" if fn_name else ""
+        dynamic_flag = "  - **DYNAMIC URL** — exact path resolved at runtime" if dynamic else ""
+
+        parts = [
+            f"### API Call {i}: `{call.get('endpoint', 'UNKNOWN')}`",
+            f"  - Method: `{call.get('method', 'UNKNOWN')}`",
+            f"  - Source: {source}",
+            f"  - Transport: `{via}`",
+        ]
+        for detail in (trigger_str, fn_str, purpose_str, comment_str, dynamic_flag):
+            if detail:
+                parts.append(detail)
+        api_md_lines.append("\n".join(parts))
+    api_md = "\n\n".join(api_md_lines) or "None detected"
 
     # Seed EXCEL_DATA — one object per API call (AI fills in the <<fill>> placeholders)
     excel_seed = []
@@ -93,7 +118,13 @@ def pages_md_prompt(json_data: dict) -> str:
         f"Analyze the COMPONENT SOURCE CODE below to fill in:\n"
         f"  - Request Payload / Query Parameters: all API call params/body fields\n"
         f"  - Conditional Logic: field visibility rules, business conditions, show/hide logic\n"
-        f"  - Validation Rules: all form/input validation rules\n\n"
+        f"  - Validation Rules: all form/input validation rules\n"
+        f"  - For EACH API call: describe its specific business purpose based on when/where it fires\n\n"
+        f"IMPORTANT — API calls:\n"
+        f"  - Every call listed under 'Backend API Dependencies' is a REAL occurrence — document all of them\n"
+        f"  - Multiple calls to the same endpoint with different triggers (e.g. load vs. save) "
+        f"    represent DIFFERENT business operations — treat them separately\n"
+        f"  - For DYNAMIC urls, note they are computed at runtime and describe what they likely contain\n\n"
         f"INPUT JSON:\n{json.dumps(page, indent=2)}\n\n"
         f"COMPONENT SOURCE CODE (analyze for payload fields, validation, conditional logic):\n"
         f"```\n{code_snippet[:3000]}\n```\n\n"
@@ -108,9 +139,15 @@ def pages_md_prompt(json_data: dict) -> str:
         f"{verify_block}"
         f"## Child Components\n{children_md}\n\n"
         f"## Composables Used\n{composables_md}\n\n"
-        f"## Backend API Dependencies\n{api_md}\n\n"
+        f"## Backend API Dependencies\n\n{api_md}\n\n"
         f"## Request Payload / Query Parameters\n"
-        f"_For each API call above, list all query parameters or request body fields with name, type, required/optional, and description._\n\n"
+        f"_For each API call above, list all query parameters or request body fields "
+        f"with name, type, required/optional, and description. "
+        f"Group by API call number if there are multiple calls._\n\n"
+        f"## Business Logic per API Call\n"
+        f"_For each API call above: describe what business operation it performs, "
+        f"when it fires (lifecycle, user action, etc.), what data it returns/sends, "
+        f"and how the UI reacts to the response (loading state, error handling, redirect, etc.)._\n\n"
         f"## Conditional Logic\n"
         f"_Describe conditional UI rendering, field visibility rules, and business logic conditions found in this component._\n\n"
         f"## Validation Rules\n"
@@ -180,4 +217,49 @@ def undocumented_api_prompt(endpoint: str, usages: List[dict]) -> str:
         f"5. **## Documentation Status** — a warning block stating backend docs are missing "
         f"   and listing next steps to document this endpoint.\n\n"
         f"---"
+    )
+
+
+def resolve_dynamic_endpoint_prompt(
+    raw_endpoint: str,
+    method: str,
+    called_from: str,
+    context_snippet: str,
+    env_config: dict,
+    url_constants: dict,
+) -> str:
+    """
+    Ask AI to infer the real (static) API endpoint from a short code snippet
+    and available environment / constant context.
+
+    Returns a short human-readable markdown block — NOT a full page doc.
+    """
+    env_block = ""
+    if env_config:
+        env_block = "\nKnown .env base URL variables:\n" + "\n".join(
+            f"  {k} = {v}" for k, v in sorted(env_config.items())
+        )
+    const_block = ""
+    if url_constants:
+        const_block = "\nKnown URL constants from config files:\n" + "\n".join(
+            f"  {k} = {v}" for k, v in sorted(url_constants.items())
+        )
+
+    return (
+        f"The following JavaScript/TypeScript code makes a `{method}` HTTP call "
+        f"but the URL could not be determined statically.\n\n"
+        f"File: `{called_from}`\n"
+        f"Raw endpoint placeholder: `{raw_endpoint}`\n"
+        f"{env_block}{const_block}\n\n"
+        f"Code snippet around the call:\n"
+        f"```js\n{context_snippet}\n```\n\n"
+        f"Task: Analyse the code snippet and the available configuration above.\n"
+        f"Respond ONLY with a short markdown block (no intro text) containing:\n\n"
+        f"1. **Inferred endpoint pattern** — your best guess at the actual URL path "
+        f"   (e.g. `/api/users/{{id}}` or `wss://example.com/ws`). "
+        f"   If you cannot determine it, write `UNKNOWN`.\n"
+        f"2. **Confidence** — High / Medium / Low\n"
+        f"3. **Reasoning** — one or two sentences explaining your inference.\n"
+        f"4. **How to verify** — one actionable step to confirm the endpoint "
+        f"   (e.g. 'Search the backend routes for the matching controller method').\n"
     )

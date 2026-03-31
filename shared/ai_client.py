@@ -76,6 +76,12 @@ def _detect_provider(key):
     if key.startswith("gsk_"):     return "groq"
     if key.startswith("AIza"):     return "gemini"
     if key.startswith("sk-"):      return "openai"
+    # Do NOT silently fall back — warn the user so they can set --provider
+    print(
+        "  [WARN] API key prefix not recognised. "
+        "Set --provider explicitly (groq/openai/anthropic/gemini/deepseek/ollama). "
+        "Defaulting to 'groq' — authentication will likely fail."
+    )
     return "groq"
 
 
@@ -302,15 +308,16 @@ def call_ai(prompt, config, system="", max_tokens=1200):
             if system:
                 parts.append({"text": "[System]:\n" + system + "\n\n"})
             parts.append({"text": prompt})
+            # API key sent as a header to avoid leaking it in server/proxy logs
             url = (
                 "https://generativelanguage.googleapis.com/v1beta/models/"
-                "gemini-2.0-flash:generateContent?key=" + key
+                "gemini-2.0-flash:generateContent"
             )
             for attempt in range(10):
                 try:
                     r = _http_post(
                         url,
-                        {"Content-Type": "application/json"},
+                        {"Content-Type": "application/json", "x-goog-api-key": key},
                         {"contents": [{"parts": parts}],
                          "generationConfig": {"maxOutputTokens": max_tokens,
                                               "temperature": 0.1}},
@@ -318,7 +325,7 @@ def call_ai(prompt, config, system="", max_tokens=1200):
                     return r["candidates"][0]["content"]["parts"][0]["text"].strip()
                 except urllib.error.HTTPError as e:
                     if e.code == 429:
-                        wait = 30 * (attempt + 1)
+                        wait = min(30 * (attempt + 1), 120)
                         print("    Gemini 429 -- retry {}/10 in {}s...".format(attempt + 1, wait))
                         time.sleep(wait)
                     else:

@@ -16,7 +16,7 @@ Output structure:
       bill_detail.md
     undocumented/
       README.md                      <- components with no route or file
-      missing_apis.md                <- APIs called but not in backend docs
+      missing_apis.md                <- APIs called by frontend pages
 
 Each page .md includes:
   - Route / component / source file
@@ -39,6 +39,7 @@ from typing import Dict, List, Tuple
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from prompts.frontend_prompts import (pages_md_prompt, pages_md_system,
+                                      resolve_dynamic_endpoint_prompt,
                                       undocumented_api_prompt)
 from shared.ai_client import AIConfig, call_ai
 
@@ -97,7 +98,7 @@ def generate_pages_md(
 
     # ── Group pages ───────────────────────────────────────────────────────────
     groups: Dict[str, List[dict]] = defaultdict(list)
-    all_missing_apis: List[dict] = []
+    all_api_calls: List[dict] = []
     all_excel_rows: List[dict] = []
 
     for page in pages:
@@ -106,16 +107,22 @@ def generate_pages_md(
 
         for api_call in page.get("api_calls", []):
             endpoint = api_call.get("endpoint", "")
-            if endpoint and endpoint != "UNKNOWN":
-                all_missing_apis.append({
-                    "page_path":      page.get("path", "UNKNOWN"),
-                    "page_component": page.get("component", "UNKNOWN"),
-                    "endpoint":       endpoint,
-                    "method":         api_call.get("method", "UNKNOWN"),
-                    "via":            api_call.get("via", "direct"),
-                    "composable":     api_call.get("composable"),
-                    "called_from":    api_call.get("called_from", "UNKNOWN"),
-                })
+            if not endpoint:
+                continue
+            all_api_calls.append({
+                "page_path":      page.get("path", "UNKNOWN"),
+                "page_component": page.get("component", "UNKNOWN"),
+                "endpoint":       endpoint,
+                "method":         api_call.get("method", "UNKNOWN"),
+                "via":            api_call.get("via", "direct"),
+                "composable":     api_call.get("composable"),
+                "called_from":    api_call.get("called_from", "UNKNOWN"),
+                "dynamic":        api_call.get("dynamic", False),
+                "vuex_action":    api_call.get("vuex_action"),
+                "resolved_via":   api_call.get("resolved_via"),
+                "env_config":     page.get("env_config") or {},
+                "url_constants":  page.get("url_constants") or {},
+            })
 
     # ── Generate per-group documentation ─────────────────────────────────────
     sys_msg = pages_md_system()
@@ -170,7 +177,7 @@ def generate_pages_md(
     _write_frontend_index(groups, output_root)
 
     # ── Undocumented APIs ─────────────────────────────────────────────────────
-    _write_missing_apis(all_missing_apis, output_root, config, no_ai)
+    _write_missing_apis(all_api_calls, output_root, config, no_ai)
 
     # ── Excel output ──────────────────────────────────────────────────────────
     excel_path = _write_frontend_excel(all_excel_rows, output_root)
@@ -431,15 +438,24 @@ def _write_missing_apis(
     Write undocumented API documentation.
 
     Creates:
-      undocumented/missing_apis.md        — master index grouped by endpoint
-      undocumented/apis/<endpoint>.md    — per-endpoint detail page (AI or skeleton)
+      undocumented/missing_apis.md            — master index grouped by endpoint
+      undocumented/apis/<endpoint>.md         — per-endpoint detail page (AI or skeleton)
+      undocumented/unresolved_endpoints.md    — UNKNOWN/DYNAMIC endpoints with hints
     """
     undoc_dir = os.path.join(output_root, "undocumented")
     apis_dir  = os.path.join(undoc_dir, "apis")
     os.makedirs(apis_dir, exist_ok=True)
 
-    # Filter out UNKNOWN endpoints
-    real_apis = [a for a in api_list if a.get("endpoint") and a["endpoint"] != "UNKNOWN"]
+    # Split: real endpoints vs unresolved (UNKNOWN / DYNAMIC)
+    real_apis      = [a for a in api_list if a.get("endpoint")
+                      and a["endpoint"] != "UNKNOWN"
+                      and not str(a.get("endpoint", "")).startswith("DYNAMIC: var ")]
+    unresolved_raw = [a for a in api_list if not real_apis or a not in real_apis]
+
+    # ── Write unresolved/unknown endpoints doc ────────────────────────────────
+    if unresolved_raw:
+        _write_unresolved_endpoints(unresolved_raw, undoc_dir, config, no_ai)
+
     if not real_apis:
         return
 
@@ -480,12 +496,17 @@ def _write_missing_apis(
     # ── Master missing_apis.md ─────────────────────────────────────────────────
     missing_path = os.path.join(undoc_dir, "missing_apis.md")
     with open(missing_path, "w", encoding="utf-8") as f:
-        f.write("# Undocumented API Endpoints\n\n")
+        f.write("# API Endpoints Used by Frontend\n\n")
         f.write(
-            "These API endpoints are called by frontend pages but do not have "
-            "corresponding backend documentation.\n\n"
+            "These API endpoints are called by frontend pages.\n\n"
         )
         f.write(f"**Total**: {len(api_map)} unique endpoints\n\n")
+        if os.path.exists(os.path.join(undoc_dir, "unresolved_endpoints.md")):
+            ur_count = len(set(a["endpoint"] for a in unresolved_raw))
+            f.write(
+                f"**Unresolved / Dynamic**: {ur_count} endpoint(s) — "
+                f"see [unresolved_endpoints.md](unresolved_endpoints.md)\n\n"
+            )
         f.write("| Endpoint | Methods | Pages Using It | Detail |\n")
         f.write("|----------|---------|----------------|--------|\n")
         for endpoint in sorted(api_map.keys()):
@@ -529,10 +550,9 @@ def _write_missing_apis(
     readme_path = os.path.join(undoc_dir, "README.md")
     if os.path.exists(readme_path):
         with open(readme_path, "a", encoding="utf-8") as f:
-            f.write("\n## Undocumented API Endpoints\n\n")
+            f.write("\n## API Endpoints Used by Frontend\n\n")
             f.write(
-                f"{len(api_map)} API endpoint(s) are called by frontend pages "
-                f"but have no backend documentation. "
+                f"{len(api_map)} API endpoint(s) are called by frontend pages. "
                 f"See [missing_apis.md](missing_apis.md) for the full list "
                 f"and individual files in [apis/](apis/) for per-endpoint detail.\n\n"
             )
@@ -553,33 +573,256 @@ def _write_missing_apis(
             f.write("\n")
 
 
+def _write_unresolved_endpoints(
+    unresolved: List[dict],
+    undoc_dir: str,
+    config: "AIConfig",
+    no_ai: bool = False,
+) -> None:
+    """
+    Write a deep-analysis report for UNKNOWN / DYNAMIC / unresolvable endpoints.
+
+    For each unresolved call, shows:
+      - Why it couldn't be resolved (variable URL, Vuex dispatch target missing, etc.)
+      - What we do know (file it's in, transport, static prefix if DYNAMIC)
+      - Env vars and URL constants available as context
+      - Actionable steps to document it
+      - AI-inferred endpoint pattern (when AI is enabled)
+    """
+    out_path = os.path.join(undoc_dir, "unresolved_endpoints.md")
+
+    # Group by (endpoint, via, page) to avoid duplication
+    _seen: set = set()
+    unique: List[dict] = []
+    for u in unresolved:
+        key = (u.get("endpoint"), u.get("via"), u.get("page_path"),
+               u.get("called_from"), u.get("vuex_action"))
+        if key not in _seen:
+            _seen.add(key)
+            unique.append(u)
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("# Unresolved / Dynamic API Endpoints\n\n")
+        f.write(
+            "> These API calls were detected in the frontend source code but the "
+            "exact endpoint URL could **not** be determined statically.\n\n"
+        )
+        f.write(f"**Total unresolved calls**: {len(unique)}\n\n")
+        f.write("---\n\n")
+
+        # Collect all env/constants context from the entries
+        all_env: Dict[str, str] = {}
+        all_constants: Dict[str, str] = {}
+        for u in unique:
+            all_env.update(u.get("env_config") or {})
+            all_constants.update(u.get("url_constants") or {})
+
+        if all_env:
+            f.write("## Known Base URLs (from `.env` files)\n\n")
+            f.write("| Variable | Value |\n")
+            f.write("|----------|-------|\n")
+            for k, v in sorted(all_env.items()):
+                f.write(f"| `{k}` | `{v}` |\n")
+            f.write("\n")
+
+        if all_constants:
+            f.write("## Known URL Constants (from config/constants files)\n\n")
+            f.write("| Constant | Value |\n")
+            f.write("|----------|-------|\n")
+            for k, v in sorted(all_constants.items()):
+                f.write(f"| `{k}` | `{v}` |\n")
+            f.write("\n")
+
+        f.write("---\n\n## Unresolved Calls\n\n")
+
+        for u in unique:
+            endpoint    = u.get("endpoint", "UNKNOWN")
+            via         = u.get("via", "direct")
+            page_path   = u.get("page_path", "?")
+            called_from = u.get("called_from", "?")
+            method      = u.get("method", "?")
+            vuex_action  = u.get("vuex_action")
+            resolved_via = u.get("resolved_via")
+            snippet      = u.get("context_snippet") or ""
+            env_cfg      = u.get("env_config") or {}
+            url_consts   = u.get("url_constants") or {}
+
+            # Heading
+            if endpoint.startswith("DYNAMIC:"):
+                heading = f"DYNAMIC call in `{called_from}`"
+            elif vuex_action:
+                heading = f"Vuex dispatch: `{vuex_action}`"
+            elif endpoint == "UNKNOWN":
+                heading = f"UNKNOWN endpoint in `{called_from}` (page: `{page_path}`)"
+            else:
+                heading = f"`{endpoint}` (partial)"
+
+            f.write(f"### {heading}\n\n")
+            f.write("| Field | Value |\n")
+            f.write("|-------|-------|\n")
+            f.write(f"| **Raw endpoint** | `{endpoint}` |\n")
+            f.write(f"| **Method** | `{method}` |\n")
+            f.write(f"| **Transport** | `{via}` |\n")
+            f.write(f"| **Page route** | `{page_path}` |\n")
+            f.write(f"| **Source file** | `{called_from}` |\n")
+            if vuex_action:
+                f.write(f"| **Vuex action key** | `{vuex_action}` |\n")
+            if resolved_via:
+                f.write(f"| **Resolved from** | `{resolved_via}` |\n")
+
+            # ── AI deep-resolution ────────────────────────────────────────────
+            # Only attempt when: AI is on + there's a code snippet + it's DYNAMIC/UNKNOWN
+            should_ai_infer = (
+                not no_ai
+                and config.use_ai
+                and snippet
+                and (endpoint.startswith("DYNAMIC:") or endpoint == "UNKNOWN")
+                and via not in ("vuex_dispatch",)
+            )
+            if should_ai_infer:
+                try:
+                    infer_prompt = resolve_dynamic_endpoint_prompt(
+                        raw_endpoint    = endpoint,
+                        method          = method,
+                        called_from     = called_from,
+                        context_snippet = snippet,
+                        env_config      = env_cfg,
+                        url_constants   = url_consts,
+                    )
+                    ai_response = call_ai(infer_prompt, config, max_tokens=400)
+                    if ai_response and not ai_response.startswith("[AI failed"):
+                        f.write("\n**AI-Inferred Endpoint:**\n\n")
+                        f.write(ai_response.strip())
+                        f.write("\n\n")
+                        if config.delay > 0:
+                            time.sleep(config.delay)
+                except Exception:
+                    pass  # AI inference is best-effort only
+
+            # ── Show code snippet ─────────────────────────────────────────────
+            if snippet:
+                f.write("\n**Code context:**\n\n")
+                f.write(f"```js\n{snippet}\n```\n\n")
+
+            # ── Resolution hints ──────────────────────────────────────────────
+            f.write("**How to resolve:**\n\n")
+            if vuex_action:
+                parts = vuex_action.split("/")
+                mod   = parts[0] if len(parts) > 1 else "root"
+                act   = parts[-1]
+                f.write(
+                    f"1. Find the Vuex store module `{mod}` "
+                    f"(e.g. `store/modules/{mod}.js`)\n"
+                    f"2. Locate the action `{act}` and its API calls\n"
+                    f"3. Document that endpoint in the backend docs\n\n"
+                )
+            elif endpoint.startswith("DYNAMIC:"):
+                raw = endpoint[len("DYNAMIC:"):].strip()
+                f.write(
+                    f"1. Open `{called_from}` and locate the call using: `{raw}`\n"
+                    f"2. Check the variable(s) or expression used to build the URL\n"
+                    f"3. Common patterns: `const url = '/api/...'` or "
+                    f"`\\`/api/${{id}}\\``\n"
+                )
+                if all_env:
+                    env_list = ", ".join(f"`{k}`" for k in all_env)
+                    f.write(
+                        f"4. The base URL may come from env var(s): {env_list}\n"
+                    )
+                f.write("\n")
+            elif via == "graphql":
+                f.write(
+                    "1. This is a GraphQL call — check your Apollo/GraphQL schema\n"
+                    "2. Locate the query/mutation definition file\n"
+                    "3. Document the operation in the GraphQL API docs\n\n"
+                )
+            elif via == "websocket":
+                f.write(
+                    "1. This is a WebSocket connection — check WebSocket server config\n"
+                    "2. Locate the handler on the backend\n"
+                    "3. Document the WS events/messages in the API docs\n\n"
+                )
+            else:
+                f.write(
+                    f"1. Open `{called_from}` and search for the HTTP call\n"
+                    "2. Trace the URL variable backward to its declaration\n\n"
+                )
+
+            f.write("---\n\n")
+
+
 def _skeleton_undoc_api(endpoint: str, usages: List[dict]) -> str:
     """No-AI fallback: generate structured markdown for an undocumented API endpoint."""
     pages_using = sorted(set(u["page_path"] for u in usages))
     methods     = sorted(set(u["method"] for u in usages))
     methods_str = ", ".join(f"`{m}`" for m in methods)
 
+    # Collect env / URL constants context across all usages
+    all_env: Dict[str, str] = {}
+    all_constants: Dict[str, str] = {}
+    for u in usages:
+        all_env.update(u.get("env_config") or {})
+        all_constants.update(u.get("url_constants") or {})
+
+    # Detect if this is a GraphQL or WebSocket endpoint
+    is_graphql  = endpoint.startswith("graphql:")
+    is_ws       = endpoint.startswith("ws://") or endpoint.startswith("wss://")
+    is_dynamic  = endpoint.startswith("DYNAMIC:")
+
     lines = [
-        f"# Undocumented API: `{endpoint}`\n\n",
-        f"> **Warning**: This endpoint is called by the frontend but has no backend documentation.\n\n",
-        f"## Summary\n\n",
-        f"| Field | Value |\n",
-        f"|-------|-------|\n",
+        f"# API Endpoint: `{endpoint}`\n\n",
+        f"> This endpoint is called by the frontend.\n\n",
+        "## Summary\n\n",
+        "| Field | Value |\n",
+        "|-------|-------|\n",
         f"| **Endpoint** | `{endpoint}` |\n",
         f"| **HTTP Methods** | {methods_str} |\n",
-        f"| **Used by** | {len(pages_using)} page(s) |\n\n",
-        f"## Where It Is Used\n\n",
-        f"| Page / Route | Method | Source | Transport |\n",
-        f"|-------------|--------|--------|-----------|\n",
+        f"| **Used by** | {len(pages_using)} page(s) |\n",
     ]
+
+    if is_graphql:
+        op_name = endpoint[len("graphql:"):]
+        lines.append(f"| **Type** | GraphQL |\n")
+        lines.append(f"| **Operation** | `{op_name}` |\n")
+    elif is_ws:
+        lines.append("| **Type** | WebSocket |\n")
+    elif is_dynamic:
+        lines.append("| **Type** | Dynamic (runtime-computed URL) |\n")
+
+    lines.append("\n")
+
+    # ── Base URL context ───────────────────────────────────────────────────────
+    if all_env or all_constants:
+        lines.append("## Base URL Context\n\n")
+        if all_env:
+            lines.append("**From `.env` files:**\n\n")
+            lines.append("| Variable | Value |\n")
+            lines.append("|----------|-------|\n")
+            for k, v in sorted(all_env.items()):
+                lines.append(f"| `{k}` | `{v}` |\n")
+            lines.append("\n")
+        if all_constants:
+            lines.append("**From config/constants files:**\n\n")
+            lines.append("| Constant | Value |\n")
+            lines.append("|----------|-------|\n")
+            for k, v in sorted(all_constants.items()):
+                lines.append(f"| `{k}` | `{v}` |\n")
+            lines.append("\n")
+
+    # ── Where it is used ──────────────────────────────────────────────────────
+    lines.append("## Where It Is Used\n\n")
+    lines.append("| Page / Route | Method | Source | Transport |\n")
+    lines.append("|-------------|--------|--------|-----------|\n")
     for u in usages:
         comp_note = (
             f"via `{u['composable']}()`"
             if u.get("composable")
             else f"in `{u.get('called_from', 'UNKNOWN')}`"
         )
+        resolved = f" ← `{u['resolved_via']}`" if u.get("resolved_via") else ""
         lines.append(
-            f"| `{u['page_path']}` | `{u['method']}` | {comp_note} | {u['via']} |\n"
+            f"| `{u['page_path']}` | `{u['method']}` "
+            f"| {comp_note}{resolved} | {u['via']} |\n"
         )
 
     lines.append("\n## Pages Detail\n\n")
@@ -592,12 +835,16 @@ def _skeleton_undoc_api(endpoint: str, usages: List[dict]) -> str:
                 if u.get("composable")
                 else f"Called directly in `{u.get('called_from', 'UNKNOWN')}`"
             )
+            vuex_note = (
+                f" (Vuex action: `{u['vuex_action']}`)"
+                if u.get("vuex_action") else ""
+            )
             lines.append(
-                f"- {comp_note} | Method: `{u['method']}` | Transport: `{u['via']}`\n"
+                f"- {comp_note}{vuex_note} | Method: `{u['method']}` | Transport: `{u['via']}`\n"
             )
         lines.append("\n")
 
-    # Infer purpose from endpoint name
+    # ── Infer purpose from endpoint name ──────────────────────────────────────
     ep_lower = endpoint.lower()
     inferences = []
     if any(x in ep_lower for x in ["list", "all", "index"]):
@@ -618,11 +865,13 @@ def _skeleton_undoc_api(endpoint: str, usages: List[dict]) -> str:
         inferences.append("Provides reporting or analytics data")
     if any(x in ep_lower for x in ["upload", "import", "export", "download"]):
         inferences.append("Handles file upload/download or data import/export")
+    if is_graphql:
+        inferences.append("GraphQL operation — check the server-side resolver")
+    if is_ws:
+        inferences.append("WebSocket connection — check the WS server handler")
 
     lines.append("## How It Can Be Used\n\n")
-    lines.append(
-        f"_Based on endpoint name `{endpoint}`, this API likely:_\n\n"
-    )
+    lines.append(f"_Based on endpoint `{endpoint}`, this API likely:_\n\n")
     if inferences:
         for inf in inferences:
             lines.append(f"- {inf}\n")
@@ -630,21 +879,21 @@ def _skeleton_undoc_api(endpoint: str, usages: List[dict]) -> str:
         lines.append(f"- Handles `{methods[0] if methods else 'HTTP'}` requests\n")
         lines.append(f"- Used by {len(pages_using)} frontend page(s)\n")
 
-    lines.append(
-        f"\n**Example call (axios)**:\n"
-        f"```js\n"
-        f"// {methods[0] if methods else 'GET'} {endpoint}\n"
-        f"const response = await axios.{(methods[0] if methods else 'GET').lower()}"
-        f"('{endpoint}');\n"
-        f"```\n\n"
-    )
+    if not is_graphql and not is_ws:
+        lines.append(
+            f"\n**Example call (axios)**:\n"
+            f"```js\n"
+            f"// {methods[0] if methods else 'GET'} {endpoint}\n"
+            f"const response = await axios.{(methods[0] if methods else 'GET').lower()}"
+            f"('{endpoint}');\n"
+            f"```\n\n"
+        )
 
     lines.append(
-        "## Documentation Status\n\n"
-        "> This endpoint has no backend documentation. To resolve:\n"
+        "## Notes\n\n"
+        "> To get more details about this endpoint:\n"
         "> 1. Locate the backend controller/route that handles this path\n"
-        "> 2. Add it to the backend API docs\n"
-        "> 3. Re-run doc generation to update this page\n\n"
+        "> 2. Check the backend API documentation for this route\n\n"
         "---\n"
     )
     return "".join(lines)
@@ -718,26 +967,61 @@ def _skeleton_page(page: dict) -> str:
         state_md = "_Could not scan — source file not found on disk_"
 
     # ── API calls ─────────────────────────────────────────────────────────────
-    api_lines = []
-    for call in api_calls:
-        method      = call.get("method", "?").upper()
-        endpoint    = call.get("endpoint", "UNKNOWN")
-        called_from = call.get("called_from", "?")
-        composable  = call.get("composable")
-        via         = call.get("via", "direct")
+    api_lines  = []
+    biz_lines  = []   # business-logic section
+    for i, call in enumerate(api_calls, 1):
+        method       = call.get("method", "?").upper()
+        endpoint     = call.get("endpoint", "UNKNOWN")
+        called_from  = call.get("called_from", "?")
+        composable   = call.get("composable")
+        via          = call.get("via", "direct")
+        via_child    = call.get("via_child")
+        purpose      = call.get("purpose", "")
+        trigger      = call.get("trigger", "")
+        trigger_name = call.get("trigger_name", "")
+        fn_name      = call.get("function_name", "")
+        comment      = call.get("comment", "")
+        dynamic      = call.get("dynamic", False)
+
         source_note = f"via `{composable}()`" if composable else f"in `{called_from}`"
-        api_lines.append(f"| `{method}` | `{endpoint}` | {source_note} | {via} |")
+        if via_child:
+            source_note += f" (child: `{via_child}`)"
+        dynamic_flag = " ⚡dynamic" if dynamic else ""
+
+        api_lines.append(
+            f"| {i} | `{method}` | `{endpoint}`{dynamic_flag} | {source_note} | `{via}` |"
+        )
+
+        # Build business logic entry
+        biz_parts = [f"**Call {i}: `{method} {endpoint}`**"]
+        if purpose and purpose != "inline call":
+            biz_parts.append(f"- **Purpose**: {purpose}")
+        if trigger_name:
+            biz_parts.append(f"- **Trigger**: `{trigger_name}` ({trigger})")
+        elif trigger and trigger not in ("unknown", "inline"):
+            biz_parts.append(f"- **Trigger**: {trigger}")
+        if fn_name:
+            biz_parts.append(f"- **In function**: `{fn_name}()`")
+        if comment:
+            biz_parts.append(f"- **Code note**: _{comment}_")
+        if via_child:
+            biz_parts.append(f"- **Via child component**: `{via_child}`")
+        if dynamic:
+            biz_parts.append("- **Note**: URL is dynamically computed at runtime")
+        biz_lines.append("\n".join(biz_parts))
 
     if api_lines:
         api_md = (
-            "| Method | Endpoint | Source | Transport |\n"
-            "|--------|----------|--------|-----------|\n"
+            "| # | Method | Endpoint | Source | Transport |\n"
+            "|---|--------|----------|--------|-----------|\n"
             + "\n".join(api_lines)
         )
     elif comp_file:
         api_md = "_None — no axios/fetch/form calls detected_"
     else:
         api_md = "_Could not scan — source file not found on disk_"
+
+    biz_md = "\n\n".join(biz_lines) if biz_lines else "_See API Dependencies table above_"
 
     # ── Unknowns / warnings ───────────────────────────────────────────────────
     validation_static  = page.get("validation_rules_static", [])
@@ -774,6 +1058,8 @@ def _skeleton_page(page: dict) -> str:
         f"{composables_md}\n\n"
         f"## Backend API Dependencies\n\n"
         f"{api_md}\n\n"
+        f"## Business Logic per API Call\n\n"
+        f"{biz_md}\n\n"
         f"## Request Payload / Query Parameters\n\n"
         f"_Static extraction only — run with AI enabled to infer payload fields._\n\n"
         f"## Conditional Logic\n\n"

@@ -200,70 +200,87 @@ def detect_domain(method: str, path: str, handler: str = "") -> str:
 # =============================================================================
 
 class ProgressTracker:
+    """
+    Tracks which APIs have been documented so runs can resume mid-way.
+    Internally uses sets for O(1) membership tests; serialises as lists to JSON.
+    """
+
     def __init__(self, state_dir: str):
         self.path = os.path.join(state_dir, "progress.json")
-        self.data = self._load()
+        self._sets: Dict[str, Set[str]] = self._load()
 
-    def _load(self) -> dict:
+    # ── persistence ──────────────────────────────────────────────────────────
+
+    def _load(self) -> Dict[str, Set[str]]:
+        blank: Dict[str, Set[str]] = {
+            "apis": set(), "ai_apis": set(),
+            "sql_apis": set(), "sql_ai_apis": set(),
+            "domains": set(),
+        }
         if os.path.exists(self.path):
             try:
                 with open(self.path, encoding="utf-8") as f:
-                    return json.load(f)
+                    raw = json.load(f)
+                for k, v in raw.items():
+                    blank[k] = set(v) if isinstance(v, list) else set()
             except Exception:
                 pass
-        return {"apis": [], "ai_apis": [], "sql_apis": [], "sql_ai_apis": [], "domains": []}
+        return blank
 
     def _save(self) -> None:
-        with open(self.path, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2)
+        # Write to a temp file first, then rename — avoids corrupt JSON on
+        # interrupted writes (important for parallel terminal mode).
+        tmp = self.path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({k: sorted(v) for k, v in self._sets.items()}, f, indent=2)
+        os.replace(tmp, self.path)
 
     def _ensure_key(self, key: str) -> None:
-        if key not in self.data:
-            self.data[key] = []
+        if key not in self._sets:
+            self._sets[key] = set()
+
+    # ── public API ────────────────────────────────────────────────────────────
 
     def api_done(self, method: str, path: str, ai: bool = False) -> bool:
-        key  = "{} {}".format(method, path)
         field = "ai_apis" if ai else "apis"
         self._ensure_key(field)
-        return key in self.data[field]
+        return "{} {}".format(method, path) in self._sets[field]
 
     def sql_done(self, method: str, path: str, ai: bool = False) -> bool:
-        key  = "{} {}".format(method, path)
         field = "sql_ai_apis" if ai else "sql_apis"
         self._ensure_key(field)
-        return key in self.data[field]
+        return "{} {}".format(method, path) in self._sets[field]
 
     def mark_api(self, method: str, path: str, ai: bool = False) -> None:
-        key  = "{} {}".format(method, path)
-        fields = ("apis", "ai_apis") if ai else ("apis",)
-        for field in fields:
+        token = "{} {}".format(method, path)
+        for field in (("apis", "ai_apis") if ai else ("apis",)):
             self._ensure_key(field)
-            if key not in self.data[field]:
-                self.data[field].append(key)
+            self._sets[field].add(token)
         self._save()
 
     def mark_sql(self, method: str, path: str, ai: bool = False) -> None:
-        key  = "{} {}".format(method, path)
-        fields = ("sql_apis", "sql_ai_apis") if ai else ("sql_apis",)
-        for field in fields:
+        token = "{} {}".format(method, path)
+        for field in (("sql_apis", "sql_ai_apis") if ai else ("sql_apis",)):
             self._ensure_key(field)
-            if key not in self.data[field]:
-                self.data[field].append(key)
+            self._sets[field].add(token)
         self._save()
 
     def domain_done(self, domain: str, ai: bool = False) -> bool:
         key = ("ai_" if ai else "") + domain
-        return key in self.data.get("domains", [])
+        return key in self._sets.get("domains", set())
 
     def mark_domain(self, domain: str, ai: bool = False) -> None:
         key = ("ai_" if ai else "") + domain
         self._ensure_key("domains")
-        if key not in self.data["domains"]:
-            self.data["domains"].append(key)
+        self._sets["domains"].add(key)
         self._save()
 
     def reset(self) -> None:
-        self.data = {"apis": [], "ai_apis": [], "sql_apis": [], "sql_ai_apis": [], "domains": []}
+        self._sets = {
+            "apis": set(), "ai_apis": set(),
+            "sql_apis": set(), "sql_ai_apis": set(),
+            "domains": set(),
+        }
         self._save()
         print("  Progress reset.")
 

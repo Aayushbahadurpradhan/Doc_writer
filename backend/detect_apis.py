@@ -460,6 +460,32 @@ def _at_split(handler: str) -> Tuple[str, str]:
     return handler, "unknown"
 
 
+def _singularize(word: str) -> str:
+    """Basic English singularisation — handles the worst edge-cases."""
+    if not word:
+        return word
+    w = word.lower()
+    # words that must NOT be changed
+    _NO_CHANGE = {
+        "news", "series", "species", "address", "access", "process",
+        "progress", "status", "canvas", "alias", "axis", "basis",
+        "analysis", "diagnosis", "campus", "virus", "census",
+    }
+    if w in _NO_CHANGE or len(w) <= 3:
+        return word
+    if w.endswith("ies") and len(w) > 4:
+        return word[:-3] + "y"          # policies -> policy
+    if w.endswith("ves") and len(w) > 5:
+        return word[:-3] + "f"          # leaves -> leaf
+    if w.endswith("sses") or w.endswith("xes") or w.endswith("ches") or w.endswith("shes"):
+        return word[:-2]                # addresses -> address, boxes -> box
+    if w.endswith("ses") and len(w) > 5:
+        return word[:-2]                # statuses -> status
+    if w.endswith("s") and not w.endswith("ss") and len(w) > 4:
+        return word[:-1]                # agents -> agent
+    return word
+
+
 def _resource_routes(base: str, ctrl: str) -> List[dict]:
     """Expand a Route::resource into 7 standard RESTful routes (Laravel default).
 
@@ -468,7 +494,7 @@ def _resource_routes(base: str, ctrl: str) -> List[dict]:
     those two and adds PATCH instead.
     """
     base = base.rstrip("/")
-    singular = base.split("/")[-1].rstrip("s") or "item"
+    singular = _singularize(base.split("/")[-1]) or "item"
     return [
         {"method": "GET",    "path": base,
          "full_path": base,
@@ -498,7 +524,7 @@ def _api_resource_routes(base: str, ctrl: str) -> List[dict]:
     """Expand Route::apiResource (no create/edit HTML routes; adds PATCH)."""
     base = base.rstrip("/")
     name = base.split("/")[-1]
-    singular = re.sub(r"s$", "", name) or "item"
+    singular = _singularize(name) or "item"
     return [
         {"method": "GET",    "path": base, "full_path": base,
          "controller": ctrl, "action": "index",   "params": []},

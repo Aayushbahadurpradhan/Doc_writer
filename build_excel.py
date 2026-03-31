@@ -16,26 +16,38 @@ workbook so devs know exactly what still needs manual entry or AI generation.
 
 import os
 import re
+import sys
 from datetime import datetime
+
+# Reconfigure stdout to UTF-8 so emoji in sheet-names don't crash on Windows
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 # ─────────────────────────────── CONFIG / PATHS ───────────────────────────────
-# Change PROJECT_NAME and paths to target a different project.
-# BACKEND_PATH / FRONTEND_PATH point to the generated .md docs.
-# If FRONTEND_PATH sub-folders are empty, the frontend Excel is skipped.
-# To use commission_billing frontend docs instead, set:
-#   FRONTEND_PATH = r"D:\CloudTech_main\Doc_writer\doc_output\commission_billing\docs\frontend"
-PROJECT_NAME = "nuerabenefits"
+# When running as a standalone script, these defaults point to the first
+# sub-folder found inside doc_output/ next to this file.
+# When called via  generate_excel()  (from main.py --excel), all values are
+# overridden by the caller — do NOT change these constants directly.
 
-BACKEND_PATH    = r"D:\CloudTech_main\Doc_writer\doc_output\nuerabenefits\docs\backend"
-FRONTEND_PATH   = r"D:\CloudTech_main\Doc_writer\doc_output\nuerabenefits\docs\frontend"
-OUTPUT_DIR      = r"D:\CloudTech_main\Doc_writer\doc_output\nuerabenefits"
+def _default_project() -> str:
+    doc_output = os.path.join(os.path.dirname(os.path.abspath(__file__)), "doc_output")
+    if os.path.isdir(doc_output):
+        dirs = sorted(d for d in os.listdir(doc_output)
+                      if os.path.isdir(os.path.join(doc_output, d)))
+        if dirs:
+            return dirs[0]
+    return "project"
 
-BACKEND_OUTPUT  = os.path.join(OUTPUT_DIR, f"{PROJECT_NAME}_backend.xlsx")
-FRONTEND_OUTPUT = os.path.join(OUTPUT_DIR, f"{PROJECT_NAME}_frontend.xlsx")
+PROJECT_NAME = _default_project()
+OUTPUT_DIR      = os.path.join(os.path.dirname(os.path.abspath(__file__)), "doc_output", PROJECT_NAME)
+BACKEND_PATH    = os.path.join(OUTPUT_DIR, "docs", "backend")
+FRONTEND_PATH   = os.path.join(OUTPUT_DIR, "docs", "frontend")
+BACKEND_OUTPUT  = os.path.join(OUTPUT_DIR, "{}_backend.xlsx".format(PROJECT_NAME))
+FRONTEND_OUTPUT = os.path.join(OUTPUT_DIR, "{}_frontend.xlsx".format(PROJECT_NAME))
 
 # ──────────────────────────────── COLOUR PALETTE ──────────────────────────────
 C_TITLE_BG       = "1B2A4A"
@@ -79,6 +91,11 @@ HTTP_COLOR = {
 
 # ─────────────────────────────── STYLE HELPERS ────────────────────────────────
 
+def _safe_title(name):
+    """Strip variation selectors and enforce Excel's 31-char sheet-name limit."""
+    name = name.replace("\ufe0f", "")  # remove emoji variation selector-16
+    return name[:31]
+
 def _fill(hex_color):
     return PatternFill("solid", fgColor=hex_color)
 
@@ -94,9 +111,9 @@ def _border(style="thin"):
 
 def _make_writer(ws, row_num, default_bg):
     """Return a cell-writing helper bound to the given row and background."""
-    def _c(col, value, bg=None, bold=False, h="left", color=C_TEXT_DARK):
+    def _c(col, value, bg=None, bold=False, italic=False, h="left", color=C_TEXT_DARK):
         cell = ws.cell(row=row_num, column=col, value=value)
-        cell.font      = _font(bold=bold, color=color, size=9)
+        cell.font      = _font(bold=bold, italic=italic, color=color, size=9)
         cell.fill      = _fill(bg if bg is not None else default_bg)
         cell.alignment = _align(h=h, wrap=True)
         cell.border    = _border()
@@ -166,6 +183,11 @@ def parse_business_md(path):
             if parts and parts[0] in ("GET", "POST", "PUT", "PATCH", "DELETE"):
                 http_method = parts[0]
                 endpoint    = " ".join(parts[1:])
+        # Also strip verb if http_method was already found but endpoint still has it
+        if http_method and endpoint:
+            parts = endpoint.split()
+            if parts and parts[0] in ("GET", "POST", "PUT", "PATCH", "DELETE"):
+                endpoint = " ".join(parts[1:]).strip()
 
         controller = ctrl_m.group(1).strip() if ctrl_m else ""
         auth_raw   = auth_m.group(1).strip() if auth_m else ""
@@ -185,21 +207,224 @@ def parse_business_md(path):
         if input_params.lower() in ("none","— none",""):
             input_params = "—"
 
+        # ── Parse side effects into structured fields ──────────────────────
+        def _se(label):
+            m = re.search(rf"\*\*{re.escape(label)}\*\*:\s*([^\n]+)", side_raw)
+            v = m.group(1).strip() if m else ""
+            if v.lower() in ("none","- none","— none",""):
+                return "None"
+            return v
+
+        side_effects = _clean(side_raw) or "None"
+        emails       = _se("Emails")
+        jobs         = _se("Jobs/Queues")
+        events       = _se("Events")
+        ext_apis     = _se("External APIs")
+        files        = _se("Files")
+        # Build combined readable side effects string
+        se_lines = []
+        if emails     != "None": se_lines.append(f"Emails: {emails}")
+        if jobs        != "None": se_lines.append(f"Jobs: {jobs}")
+        if events      != "None": se_lines.append(f"Events: {events}")
+        if ext_apis    != "None": se_lines.append(f"Ext APIs: {ext_apis}")
+        if files       != "None": se_lines.append(f"Files: {files}")
+        side_effects_full = "\n".join(se_lines) if se_lines else "None"
+
         results.append({
-            "name":           name,
-            "endpoint":       endpoint,
-            "http_method":    http_method.upper() if http_method else "—",
-            "controller":     controller,
-            "auth":           auth_raw or "verify.internal.token",
-            "purpose":        _clean(purpose) or "—",
-            "business_logic": _clean(business_logic) or "—",
-            "input_params":   input_params,
-            "db_ops":         _clean(db_raw) or "—",
-            "side_effects":   _clean(side_raw) or "—",
+            "name":              name,
+            "endpoint":          endpoint,
+            "http_method":       http_method.upper() if http_method else "—",
+            "controller":        controller,
+            "auth":              auth_raw or "verify.internal.token",
+            "purpose":           _clean(purpose) or "—",
+            "business_logic":    _clean(business_logic) or "—",
+            "input_params":      input_params,
+            "db_ops":            _clean(db_raw) or "—",
+            "side_effects":      side_effects_full,
+            # raw structured side-effect sub-fields (for merging)
+            "_emails":   emails,
+            "_jobs":     jobs,
+            "_events":   events,
+            "_ext_apis": ext_apis,
+            "_files":    files,
         })
     return results
 
+
+def parse_api_md(path):
+    """
+    Parse api.md → dict: endpoint_url → {middleware, params}.
+    api.md lists: **Endpoint**, **Controller**, **Middleware**, **Params**
+    """
+    if not os.path.exists(path):
+        return {}
+    text = open(path, encoding="utf-8").read()
+    out  = {}
+    for sec in re.split(r"\n(?=## )", text):
+        sec = sec.strip()
+        if not sec or sec.startswith("# API"):
+            continue
+        ep_m   = re.search(r"\*\*Endpoint\*\*\s*:\s*`([^`]+)`",    sec)
+        mw_m   = re.search(r"\*\*Middleware\*\*\s*:\s*([^\n]+)",    sec)
+        par_m  = re.search(r"\*\*Params\*\*\s*:\s*([^\n]+)",        sec)
+        if not ep_m:
+            continue
+        raw_ep = ep_m.group(1).strip()
+        # Strip leading HTTP verb if present: "GET /v1/..." → "/v1/..."
+        parts = raw_ep.split()
+        url   = parts[1] if len(parts) >= 2 and parts[0].isupper() else raw_ep
+        out[url] = {
+            "middleware": mw_m.group(1).strip()  if mw_m  else "",
+            "params":     par_m.group(1).strip() if par_m else "",
+        }
+    return out
+
+
+def parse_legacy_sql(path):
+    """
+    Parse legacy_query.sql → dict: endpoint_url → list of query dicts.
+
+    Format per endpoint:
+      -- ----...  (separator)
+      -- Endpoint  : GET /v1/...
+      -- Controller: ...
+      -- ----...  (separator)
+      ### N -- Query M: title
+      | Field | Value | table rows |
+      ```sql ... ```
+    """
+    if not os.path.exists(path):
+        return {}
+    text = open(path, encoding="utf-8").read()
+    out: dict = {}
+
+    # Split on separator lines: "-- " followed by 10+ dashes
+    # Structure: EMPTY, HDR_1, BODY_1, HDR_2, BODY_2, ...
+    chunks = re.split(r"--\s+-{10,}[^\n]*\n", text)
+
+    def _qval(label, txt):
+        m = re.search(
+            rf"\|\s*\*\*{re.escape(label)}\*\*\s*\|\s*([^|\n]+)",
+            txt, re.IGNORECASE,
+        )
+        v = m.group(1).strip() if m else ""
+        return v if v.lower() not in ("none","—","") else ""
+
+    # Pair every (header_chunk, body_chunk): indices (1,2), (3,4), (5,6)...
+    for i in range(1, len(chunks) - 1, 2):
+        hdr_chunk = chunks[i]
+        body_chunk = chunks[i + 1] if i + 1 < len(chunks) else ""
+
+        ep_m = re.search(r"-- Endpoint\s*:\s*(?:[A-Z]+\s+)?(/[^\n]+)", hdr_chunk)
+        if not ep_m:
+            continue
+        url = ep_m.group(1).strip()
+
+        queries = []
+        for qsec in re.split(r"(?=###)", body_chunk):
+            qsec = qsec.strip()
+            if not qsec.startswith("###"):
+                continue
+
+            raw_sql_m = re.search(r"```sql\s*(.*?)```", qsec, re.DOTALL)
+            raw_sql   = raw_sql_m.group(1).strip() if raw_sql_m else ""
+
+            q = {
+                "query_type":      _qval("Type",           qsec),
+                "operation":       _qval("Operation",      qsec),
+                "tables":          _qval("Tables",         qsec),
+                "columns_read":    _qval("Columns Read",   qsec),
+                "columns_written": _qval("Columns Written",qsec),
+                "conditions":      _qval("Conditions",     qsec),
+                "joins":           _qval("Joins",          qsec),
+                "order_group":     _qval("Order / Group",  qsec),
+                "aggregates":      _qval("Aggregates",     qsec),
+                "transaction":     _qval("Transaction",    qsec),
+                "soft_deletes":    _qval("Soft Deletes",   qsec),
+                "raw_sql":         raw_sql,
+            }
+            if any(q.values()):
+                queries.append(q)
+
+        if queries:
+            if url not in out:
+                out[url] = []
+            out[url].extend(queries)
+
+    return out
+
+
+def _sql_queries_to_text(queries):
+    """Format a list of query dicts into a readable multi-line cell value."""
+    if not queries:
+        return "—"
+    lines = []
+    for i, q in enumerate(queries, 1):
+        prefix = f"Query {i}: " if len(queries) > 1 else ""
+        op     = q.get("operation","")
+        tables = q.get("tables","")
+        qtype  = q.get("query_type","")
+        if op and tables:
+            lines.append(f"{prefix}{op} {tables}" + (f" [{qtype}]" if qtype else ""))
+        elif op:
+            lines.append(f"{prefix}{op}")
+    return "\n".join(lines) if lines else "—"
+
+
+def _sql_conditions_to_text(queries):
+    """Format conditions + joins for all queries."""
+    if not queries:
+        return "—"
+    lines = []
+    for i, q in enumerate(queries, 1):
+        prefix = f"Q{i}: " if len(queries) > 1 else ""
+        cond   = q.get("conditions","")
+        joins  = q.get("joins","")
+        if cond:
+            lines.append(f"{prefix}WHERE {cond}")
+        if joins:
+            lines.append(f"{prefix}JOIN: {joins}")
+    return "\n".join(lines) if lines else "—"
+
+
+def _sql_details_to_text(queries):
+    """Format columns, aggregates, transaction info."""
+    if not queries:
+        return "—"
+    lines = []
+    for i, q in enumerate(queries, 1):
+        prefix = f"Q{i}: " if len(queries) > 1 else ""
+        cols_r  = q.get("columns_read","")
+        cols_w  = q.get("columns_written","")
+        agg     = q.get("aggregates","")
+        order   = q.get("order_group","")
+        txn     = q.get("transaction","")
+        soft    = q.get("soft_deletes","")
+        raw     = q.get("raw_sql","")
+        if cols_r and cols_r != "*":
+            lines.append(f"{prefix}Read: {cols_r}")
+        if cols_w:
+            lines.append(f"{prefix}Write: {cols_w}")
+        if agg:
+            lines.append(f"{prefix}Aggregates: {agg}")
+        if order:
+            lines.append(f"{prefix}Order/Group: {order}")
+        if txn:
+            lines.append(f"{prefix}Txn: {txn}")
+        if soft:
+            lines.append(f"{prefix}SoftDel: {soft}")
+        if raw:
+            lines.append(f"{prefix}SQL: {raw[:200]}")
+    return "\n".join(lines) if lines else "—"
+
+
 def parse_responses_md(path):
+    """
+    Parse responses.md → dict: endpoint_url → rich response dict.
+
+    Extracts per endpoint:
+      response_type, path_params, fields_json, example_json, description
+    """
     if not os.path.exists(path):
         return {}
     text = open(path, encoding="utf-8").read()
@@ -212,36 +437,112 @@ def parse_responses_md(path):
         if not hdr_m:
             continue
         hdr = hdr_m.group(1).strip()
-        jm  = re.search(r"```json\s*(.*?)```", sec, re.DOTALL)
-        out[hdr] = jm.group(1).strip() if jm else re.sub(r"^## .+\n","",sec).strip()
+
+        # Extract the URL part: "GET /v1/view-ach/{achYear}/{achMonth}" → "/v1/..."
+        url_m = re.match(r"^(?:[A-Z]+\s+)?(/\S+)", hdr)
+        url   = url_m.group(1).strip() if url_m else hdr
+
+        # Response type
+        rt_m  = re.search(r"\*\*Response Type\*\*\s*:\s*`?([^\n`]+)`?", sec)
+        rtype = rt_m.group(1).strip() if rt_m else ""
+
+        # Path parameters
+        pp_m    = re.search(
+            r"\*\*Path Parameters\*\*[:\s]*(.*?)(?=\*\*|\n\n|\Z)", sec, re.DOTALL
+        )
+        path_params = ""
+        if pp_m:
+            pp_block = pp_m.group(1).strip()
+            pp_list  = [ln.lstrip("- ").strip() for ln in pp_block.splitlines()
+                        if ln.strip().startswith("-")]
+            path_params = "; ".join(pp_list) if pp_list else pp_block[:120]
+
+        # Response fields JSON (first ```json block)
+        json_blocks = re.findall(r"```json\s*(.*?)```", sec, re.DOTALL)
+        fields_json  = json_blocks[0].strip() if json_blocks else ""
+        example_json = json_blocks[1].strip() if len(json_blocks) > 1 else ""
+
+        # Description
+        desc_m  = re.search(
+            r"\*\*Description\*\*[:\s]*(.*?)(?=\n\n|\n---|\Z)", sec, re.DOTALL
+        )
+        description = desc_m.group(1).strip() if desc_m else ""
+
+        out[url] = {
+            "response_type":  rtype,
+            "path_params":    path_params,
+            "fields_json":    fields_json,
+            "example_json":   example_json,
+            "description":    description,
+            "_raw_hdr":       hdr,
+        }
     return out
 
+
 def load_domain(domain_path):
-    endpoints = parse_business_md(os.path.join(domain_path, "business.md"))
-    resp_map  = parse_responses_md(os.path.join(domain_path, "responses.md"))
+    """
+    Load ALL data for a domain by merging all 4 source files:
+      business.md, api.md, legacy_query.sql, responses.md
+    """
+    endpoints  = parse_business_md(  os.path.join(domain_path, "business.md"))
+    api_info   = parse_api_md(        os.path.join(domain_path, "api.md"))
+    sql_info   = parse_legacy_sql(    os.path.join(domain_path, "legacy_query.sql"))
+    resp_map   = parse_responses_md(  os.path.join(domain_path, "responses.md"))
+
     for ep in endpoints:
-        resp_text = ""
         url = ep["endpoint"]
-        for key, val in resp_map.items():
-            if url and url in key:
-                resp_text = val
-                break
-        if not resp_text:
-            for key, val in resp_map.items():
-                if ep["name"].lower() in key.lower():
-                    resp_text = val
+
+        # ── Merge api.md (middleware, path params) ────────────────────────────
+        api_entry = api_info.get(url, {})
+        # Fuzzy match: try without version prefix differences
+        if not api_entry:
+            for api_url, api_val in api_info.items():
+                if url and (url in api_url or api_url in url):
+                    api_entry = api_val
                     break
-        if not resp_text and resp_map:
-            values    = list(resp_map.values())
-            idx       = endpoints.index(ep)
-            resp_text = values[idx] if idx < len(values) else values[0]
-        ep["response"] = resp_text or "—"
+        ep["middleware"]  = api_entry.get("middleware", ep.get("auth","verify.internal.token"))
+        ep["route_params"]= api_entry.get("params", "")
+
+        # ── Merge legacy_query.sql ────────────────────────────────────────────
+        sql_queries = sql_info.get(url, [])
+        if not sql_queries:
+            # Fuzzy match on URL fragments
+            for sql_url, sql_val in sql_info.items():
+                if url and (url in sql_url or sql_url in url):
+                    sql_queries = sql_val
+                    break
+        ep["sql_queries"]       = sql_queries
+        ep["db_op_tables"]      = _sql_queries_to_text(sql_queries)
+        ep["db_conditions"]     = _sql_conditions_to_text(sql_queries)
+        ep["db_details"]        = _sql_details_to_text(sql_queries)
+        # Fallback: keep old db_ops if sql_queries is empty
+        if ep["db_op_tables"] == "—" and ep.get("db_ops","—") != "—":
+            ep["db_op_tables"] = ep["db_ops"]
+
+        # ── Merge responses.md ────────────────────────────────────────────────
+        resp_entry = resp_map.get(url, {})
+        if not resp_entry:
+            for resp_url, resp_val in resp_map.items():
+                if url and (url in resp_url or resp_url.endswith(url.split("/")[-1])):
+                    resp_entry = resp_val
+                    break
+        if not resp_entry and resp_map:
+            # Positional fallback: nth endpoint → nth response entry
+            vals = list(resp_map.values())
+            idx  = endpoints.index(ep)
+            resp_entry = vals[idx] if idx < len(vals) else vals[0]
+
+        ep["response_type"]   = resp_entry.get("response_type","")   or "json"
+        ep["response_fields"] = resp_entry.get("fields_json","")     or "—"
+        ep["response_example"]= resp_entry.get("example_json","")    or "—"
+        ep["response_desc"]   = resp_entry.get("description","")     or "—"
+        ep["response"]        = ep["response_fields"]   # backward compat
+
     return endpoints
 
 # ──────────────────────────── MISSING DATA HELPERS ────────────────────────────
 
-_REQUIRED_BE = ["name","endpoint","http_method","purpose","input_params",
-                "db_ops","response","controller"]
+_REQUIRED_BE = ["name","endpoint","http_method","purpose","controller"]
 
 def _find_missing(ep):
     return [f for f in _REQUIRED_BE if not ep.get(f) or ep[f] in ("—","Unknown","")]
@@ -257,7 +558,7 @@ def _be_status_codes(http):
 
 def _build_missing_sheet(wb, missing_log, today_str, mode="backend"):
     title = "⚠ Missing Backend" if mode == "backend" else "⚠ Missing Frontend"
-    ws    = wb.create_sheet(title=title)
+    ws    = wb.create_sheet(title=_safe_title(title))
     ws.freeze_panes = "A4"
     ws.row_dimensions[1].height = 28
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=5)
@@ -303,24 +604,40 @@ def _build_missing_sheet(wb, missing_log, today_str, mode="backend"):
 # ══════════════════════════════════════════════════════════════════════════════
 
 BE_COLUMNS = [
-    ("#",                           4),
-    ("Function / Endpoint Name",   22),
-    ("Purpose / Trigger",          32),
-    ("HTTP\nMethod",                9),
-    ("Endpoint URL",               35),
-    ("Request Fields\n(Params)",   32),
-    ("DB Table /\nOperation",      30),
-    ("Business Rules /\nNotes",    32),
-    ("Open Questions",             24),
-    ("Answer / Decision",          24),
-    ("Answered By",                14),
-    ("Date Answered",              14),
-    ("Response Fields",            30),
-    ("Status Codes",               16),
-    ("Auth / Middleware",          22),
-    ("Priority",                   10),
-    ("Owner\n(Controller)",        26),
-    ("Last Updated",               14),
+    # ── Identity ─────────────────────────────────────────
+    ("#",                               4),
+    ("Function /\nEndpoint Name",      22),
+    ("Purpose",                        34),
+    ("HTTP\nMethod",                    9),
+    ("Endpoint URL",                   36),
+    # ── Request ──────────────────────────────────────────
+    ("Route\nParameters",              22),   # path params from api.md / responses.md
+    ("Request Body\n/ Query Params",   34),   # body / query params from business.md
+    # ── Business ─────────────────────────────────────────
+    ("Business Rules\n/ Notes",        34),
+    # ── Database ─────────────────────────────────────────
+    ("DB Operation\n& Tables",         26),   # operation + table names from legacy_query.sql
+    ("DB Conditions\n& Joins",         28),   # WHERE conditions + JOINs
+    ("DB Query\nDetails",              26),   # columns, aggregates, transaction, raw SQL
+    # ── Side Effects ─────────────────────────────────────
+    ("Side Effects",                   32),   # emails, jobs, events, ext APIs, files
+    # ── Q&A ──────────────────────────────────────────────
+    ("Open Questions",                 24),
+    ("Answer / Decision",              24),
+    ("Answered By",                    14),
+    ("Date Answered",                  14),
+    # ── Response ─────────────────────────────────────────
+    ("Response\nType",                 14),   # json / array_of_objects
+    ("Response Schema\n(Fields)",      38),   # JSON schema of response
+    ("Example Response",               38),   # example JSON payload
+    ("Response\nDescription",          36),   # description text
+    # ── Status / Auth ─────────────────────────────────────
+    ("Status Codes",                   16),
+    ("Auth /\nMiddleware",             22),
+    # ── Meta ─────────────────────────────────────────────
+    ("Priority",                       10),
+    ("Owner\n(Controller)",            26),
+    ("Last Updated",                   14),
 ]
 BE_NUM_COLS = len(BE_COLUMNS)
 
@@ -363,7 +680,7 @@ def build_backend_workbook(domains_data, domain_summary, today_str):
     missing_log = []
 
     # ── Index sheet ────────────────────────────────────────────────────────
-    ws_idx = wb.create_sheet(title="📋 Index")
+    ws_idx = wb.create_sheet(title=_safe_title("📋 Index"))
     ws_idx.freeze_panes = "A4"
     _write_title_meta(
         ws_idx,
@@ -396,7 +713,7 @@ def build_backend_workbook(domains_data, domain_summary, today_str):
         _c(6, description)
 
     # ── Combined backend sheet ─────────────────────────────────────────────
-    ws = wb.create_sheet(title=f"{PROJECT_NAME} Backend")
+    ws = wb.create_sheet(title=_safe_title(f"{PROJECT_NAME} Backend"))
     ws.freeze_panes = "A4"
     for col_idx, (_, width) in enumerate(BE_COLUMNS, start=1):
         ws.column_dimensions[get_column_letter(col_idx)].width = width
@@ -440,32 +757,55 @@ def build_backend_workbook(domains_data, domain_summary, today_str):
                     "missing":  ", ".join(missing),
                 })
                 row_bg = C_MISSING_ROW
-            ws.row_dimensions[row_num].height = max(60, 15 * max(
-                len(ep.get("input_params","").split("\n")),
-                len(ep.get("db_ops","").split("\n")),
-                len(ep.get("business_logic","").split("\n")),
+
+            # Dynamic row height: tallest multi-line field determines height
+            line_counts = [
+                len(str(ep.get("input_params","") or "").split("\n")),
+                len(str(ep.get("db_op_tables","") or "").split("\n")),
+                len(str(ep.get("db_conditions","") or "").split("\n")),
+                len(str(ep.get("db_details","") or "").split("\n")),
+                len(str(ep.get("business_logic","") or "").split("\n")),
+                len(str(ep.get("side_effects","") or "").split("\n")),
                 3,
-            ))
+            ]
+            ws.row_dimensions[row_num].height = max(60, 15 * max(line_counts))
+
             _c = _make_writer(ws, row_num, row_bg)
+            # ── Identity ──────────────────────────────────────────────────────
             _c(1,  glob_idx,
                bg=C_TITLE_BG, bold=True, h="center", color=C_TEXT_WHITE)
             _c(2,  ep.get("name","—"),             bold=True)
             _c(3,  ep.get("purpose","—"))
             _c(4,  http, bg=c_http,                bold=True, h="center")
             _c(5,  ep.get("endpoint","—"),         bold=True, color=C_TEXT_BLUE)
-            _c(6,  ep.get("input_params","—"),     bg=C_RESPONSE)
-            _c(7,  ep.get("db_ops","—"),           bg=db_bg)
+            # ── Request ───────────────────────────────────────────────────────
+            _c(6,  ep.get("route_params","—") or "—",  bg=C_RESPONSE)
+            _c(7,  ep.get("input_params","—"),          bg=C_RESPONSE)
+            # ── Business ──────────────────────────────────────────────────────
             _c(8,  ep.get("business_logic","—"),   bg=db_bg)
-            _c(9,  "")
-            _c(10, "", bg=C_ANSWER)
-            _c(11, "")
-            _c(12, "")
-            _c(13, ep.get("response","—"),         bg=C_RESPONSE)
-            _c(14, _be_status_codes(http),         bg=C_STATUS)
-            _c(15, ep.get("auth","—"))
-            _c(16, "—", bg=C_ROW_ODD, h="center")
-            _c(17, ep.get("controller","—"),       color=C_TEXT_GREY)
-            _c(18, today_str,                      h="center")
+            # ── Database ──────────────────────────────────────────────────────
+            _c(9,  ep.get("db_op_tables","—"),     bg=db_bg)
+            _c(10, ep.get("db_conditions","—"),    bg=db_bg)
+            _c(11, ep.get("db_details","—"),       bg=db_bg)
+            # ── Side Effects ──────────────────────────────────────────────────
+            _c(12, ep.get("side_effects","None"),  bg=db_bg)
+            # ── Q&A ───────────────────────────────────────────────────────────
+            _c(13, "")
+            _c(14, "", bg=C_ANSWER)
+            _c(15, "")
+            _c(16, "")
+            # ── Response ──────────────────────────────────────────────────────
+            _c(17, ep.get("response_type","json"),  bg=C_STATUS, h="center")
+            _c(18, ep.get("response_fields","—"),   bg=C_RESPONSE)
+            _c(19, ep.get("response_example","—"),  bg=C_RESPONSE)
+            _c(20, ep.get("response_desc","—"),     bg=C_RESPONSE)
+            # ── Status / Auth ─────────────────────────────────────────────────
+            _c(21, _be_status_codes(http),          bg=C_STATUS)
+            _c(22, ep.get("middleware","—") or ep.get("auth","—"))
+            # ── Meta ──────────────────────────────────────────────────────────
+            _c(23, "—", bg=C_ROW_ODD, h="center")
+            _c(24, ep.get("controller","—"),        color=C_TEXT_GREY)
+            _c(25, today_str,                       h="center")
             row_num  += 1
             glob_idx += 1
 
@@ -544,11 +884,21 @@ def parse_frontend_md(path):
                                for ln in block.splitlines()
                                if ln.strip().startswith("-")]
 
-        api_calls = []
+        api_calls  = []
+        no_api_flag = False   # True when md explicitly says no calls detected
         api_m = re.search(r"## Backend API Dependencies\n+(.*?)(?=\n##|\Z)", sec, re.DOTALL)
         if api_m:
             block = api_m.group(1).strip()
-            if block.lower() not in ("none","none detected"):
+            # Detect explicit "none detected" markers (italicised or plain)
+            _block_plain = block.strip().lstrip("_").rstrip("_").lower()
+            _none_phrases = (
+                "none", "none detected", "none — no axios/fetch/form calls detected",
+                "no axios/fetch/form calls detected", "no api calls",
+                "no api calls detected",
+            )
+            if _block_plain in _none_phrases or _block_plain.startswith("none —"):
+                no_api_flag = True
+            else:
                 for row in re.finditer(
                     r"\|\s*`([A-Z]+)`\s*\|\s*`([^`]+)`\s*\|([^|]+)\|([^|]+)\|", block
                 ):
@@ -604,6 +954,7 @@ def parse_frontend_md(path):
             "children":          children,
             "composables":       composables,
             "api_calls":         api_calls,
+            "no_api_flag":       no_api_flag,   # page explicitly has no API calls
             "state_mgmt":        state_mgmt,
             "warnings":          warnings,
             "request_payload":   request_payload,
@@ -630,7 +981,7 @@ def build_frontend_workbook(fe_groups_data, today_str):
     fe_summary = []
 
     for group_name, pages in fe_groups_data:
-        safe_title = re.sub(r"[\\/*?:\[\]]", "", f"FE_{group_name}")[:31]
+        safe_title = _safe_title(re.sub(r"[\\/*?:\[\]]", "", f"FE_{group_name}"))
         ws = wb.create_sheet(title=safe_title)
         ws.freeze_panes = "A4"
         for col_idx, (_, w) in enumerate(FE_COLUMNS, start=1):
@@ -661,6 +1012,7 @@ def build_frontend_workbook(fe_groups_data, today_str):
         total_api = 0
         for page in pages:
             api_calls         = page.get("api_calls", [])
+            no_api_flag       = page.get("no_api_flag", False)
             screen_name       = page.get("component","") or page.get("route","UNKNOWN")
             route             = page.get("route","UNKNOWN")
             source_file       = page.get("source_file","—") or "—"
@@ -689,7 +1041,25 @@ def build_frontend_workbook(fe_groups_data, today_str):
                     _c(8,  conditional_logic)
                     _c(9,  validation_rules)
                     row_num += 1
+            elif no_api_flag:
+                # Page explicitly has no API calls — not a missing-data issue
+                is_odd = (row_num % 2 == 0)
+                row_bg = C_FE_ROW_ODD if is_odd else C_FE_ROW_EVEN
+                ws.row_dimensions[row_num].height = 28
+                _c = _make_writer(ws, row_num, row_bg)
+                _c(1,  row_num - 3,
+                   bg=C_FE_TITLE_BG, bold=True, h="center", color=C_TEXT_WHITE)
+                _c(2,  screen_name, bold=True)
+                _c(3,  route, bold=True, color=C_TEXT_BLUE)
+                _c(4,  source_file, color=C_TEXT_GREY)
+                _c(5,  "(No API calls)", color="64748B", italic=True)
+                _c(6,  "—", h="center")
+                _c(7,  request_payload)
+                _c(8,  conditional_logic)
+                _c(9,  validation_rules)
+                row_num += 1
             else:
+                # Unknown — API calls could not be detected
                 ws.row_dimensions[row_num].height = 36
                 _c = _make_writer(ws, row_num, C_MISSING_ROW)
                 _c(1,  row_num - 3,
@@ -714,7 +1084,7 @@ def build_frontend_workbook(fe_groups_data, today_str):
         fe_summary.append((group_name, len(pages), total_api))
 
     # Frontend index sheet
-    ws_idx = wb.create_sheet(title="🖥️ FE Index", index=0)
+    ws_idx = wb.create_sheet(title=_safe_title("🖥 FE Index"), index=0)
     ws_idx.freeze_panes = "A4"
     _write_title_meta(
         ws_idx,
@@ -739,7 +1109,7 @@ def build_frontend_workbook(fe_groups_data, today_str):
     for i, (group, page_count, api_count) in enumerate(fe_summary, start=1):
         row        = i + 3
         bg         = C_FE_ROW_ODD if (i % 2 == 1) else C_FE_ROW_EVEN
-        sheet_name = re.sub(r"[\\/*?:\[\]]", "", f"FE_{group}")[:31]
+        sheet_name = _safe_title(re.sub(r"[\\/*?:\[\]]", "", f"FE_{group}"))
         ws_idx.row_dimensions[row].height = 18
         _c = _make_writer(ws_idx, row, bg)
         _c(1, i,            h="center")
@@ -785,7 +1155,7 @@ def main():
         domains_data, domain_summary, today_str
     )
     wb_be.save(BACKEND_OUTPUT)
-    print(f"\nSaved  → {BACKEND_OUTPUT}")
+    print(f"\nSaved => {BACKEND_OUTPUT}")
     print(f"  Sheets          : {list(wb_be.sheetnames)}")
     print(f"  Total endpoints : {total_eps}")
     print(f"  Incomplete rows : {len(be_missing)}  (see sheet: ⚠ Missing Backend)")
@@ -818,7 +1188,7 @@ def main():
     wb_fe, fe_missing = build_frontend_workbook(fe_groups_data, today_str)
     wb_fe.save(FRONTEND_OUTPUT)
     total_pages = sum(len(ps) for _, ps in fe_groups_data)
-    print(f"\nSaved  → {FRONTEND_OUTPUT}")
+    print(f"\nSaved => {FRONTEND_OUTPUT}")
     print(f"  Sheets          : {list(wb_fe.sheetnames)}")
     print(f"  Total pages     : {total_pages}")
     print(f"  Incomplete rows : {len(fe_missing)}  (see sheet: ⚠ Missing Frontend)")
