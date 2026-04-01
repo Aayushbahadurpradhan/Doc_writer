@@ -7,12 +7,17 @@ from typing import List
 
 def pages_md_system() -> str:
     return (
-        "You are a frontend documentation generator.\n\n"
+        "You are a senior reverse engineer documenting frontend pages.\n\n"
+        "Your PRIMARY job: for each frontend page, clearly show WHAT the page does "
+        "and WHICH backend API endpoints it calls — like reading a browser Network tab.\n\n"
         "STRICT RULES:\n"
-        "- DO NOT invent component structure not in the JSON\n"
+        "- DO NOT invent API calls not present in the JSON input\n"
+        "- DO NOT add sections about child components, composables, state management, "
+        "  request payloads, validation rules, or conditional logic\n"
+        "- Write a concise 2-3 sentence description of what the page does (infer from "
+        "  route name, component name, and the APIs it calls)\n"
+        "- For every API call: describe WHEN it fires and WHAT it does for the user\n"
         "- If something is unknown → write 'UNKNOWN'\n"
-        "- Focus on API dependencies as the primary concern\n"
-        "- Only document what is statically visible in the data\n"
     )
 
 
@@ -21,18 +26,14 @@ def pages_md_prompt(json_data: dict) -> str:
 
     from frontend.detect_pages import _build_example_url
 
-    page                = json_data
-    path                = page.get("path", "UNKNOWN")
-    component           = page.get("component", "UNKNOWN")
-    comp_file           = page.get("component_file") or page.get("file") or "not found"
-    layout              = page.get("layout", "UNKNOWN")
-    children            = page.get("children", [])
-    template_components = page.get("template_components", [])
-    composables         = page.get("composables", [])
-    api_calls           = page.get("api_calls", [])
-    state_mgmt          = page.get("state_management", [])
-    unknowns            = page.get("unknowns", [])
-    code_snippet        = page.get("code_snippet", "")
+    page         = json_data
+    path         = page.get("path", "UNKNOWN")
+    component    = page.get("component", "UNKNOWN")
+    comp_file    = page.get("component_file") or page.get("file") or "not found"
+    api_calls    = page.get("api_calls", [])
+    unknowns     = page.get("unknowns", [])
+    code_snippet = page.get("code_snippet", "")
+    inferred     = page.get("inferred", False)
 
     # Recompute example_url when cached as None / "N/A" / null
     _cached_url = page.get("example_url")
@@ -41,123 +42,126 @@ def pages_md_prompt(json_data: dict) -> str:
     else:
         example_url = str(_cached_url)
 
-    # Verify link: only shown when a real URL is available
     if example_url and example_url != "N/A":
-        verify_block = f"> To verify this page open: **[{example_url}]({example_url})**\n\n"
+        verify_block = f"> To verify: **[{example_url}]({example_url})**\n\n"
     else:
         verify_block = "> Route has no URL mapping — component may be a modal or child view.\n\n"
 
-    # Merge children + template_components for display
-    all_children = children or template_components
-    children_md    = "\n".join(f"- {c}" for c in all_children) or "None"
-    composables_md = "\n".join(f"- {c}()" for c in composables) or "None"
-    state_md       = ", ".join(state_mgmt) if state_mgmt else "none"
-    unknowns_md    = "\n".join(f"- {u}" for u in unknowns) or "None"
+    inferred_note = " _(route inferred from file path)_" if inferred else ""
 
-    api_md_lines = []
+    # ── Build API network-trace table ─────────────────────────────────────────
+    api_table_rows = []
     for i, call in enumerate(api_calls, 1):
-        composable   = call.get("composable")
-        via          = call.get("via", "direct")
-        via_child    = call.get("via_child")
-        source       = f"via `{composable}()`" if composable else f"`{call.get('called_from', 'UNKNOWN')}`"
-        if via_child:
-            source += f" (child: `{via_child}`)"
-        purpose      = call.get("purpose", "")
-        trigger      = call.get("trigger", "")
+        method       = (call.get("method") or "?").upper()
+        endpoint     = call.get("endpoint", "UNKNOWN")
         trigger_name = call.get("trigger_name", "")
+        trigger      = call.get("trigger", "unknown")
+        composable   = call.get("composable")
+        via_child    = call.get("via_child")
+        purpose      = call.get("purpose", "")
         comment      = call.get("comment", "")
-        fn_name      = call.get("function_name", "")
         dynamic      = call.get("dynamic", False)
 
-        trigger_str  = ""
+        # When Called column
         if trigger_name:
-            trigger_str = f"  - Trigger: `{trigger_name}` ({trigger})"
-        elif trigger and trigger != "unknown":
-            trigger_str = f"  - Trigger: {trigger}"
+            when = f"`{trigger_name}`"
+        elif trigger == "lifecycle":
+            when = "On page load"
+        elif trigger == "event_handler":
+            when = "On user action"
+        elif trigger == "watcher":
+            when = "On data change"
+        elif trigger == "function_call":
+            fn = call.get("function_name", "")
+            when = f"In `{fn}()`" if fn else "On function call"
+        else:
+            when = "On function call"
 
-        purpose_str  = f"  - Purpose: {purpose}" if purpose and purpose != "inline call" else ""
-        comment_str  = f"  - Code comment: `{comment}`" if comment else ""
-        fn_str       = f"  - In function: `{fn_name}()`" if fn_name else ""
-        dynamic_flag = "  - **DYNAMIC URL** — exact path resolved at runtime" if dynamic else ""
+        if composable:
+            when += f" via `{composable}()`"
+        if via_child:
+            when += f" (child: `{via_child}`)"
+        if dynamic:
+            endpoint += " ⚡"
 
-        parts = [
-            f"### API Call {i}: `{call.get('endpoint', 'UNKNOWN')}`",
-            f"  - Method: `{call.get('method', 'UNKNOWN')}`",
-            f"  - Source: {source}",
-            f"  - Transport: `{via}`",
-        ]
-        for detail in (trigger_str, fn_str, purpose_str, comment_str, dynamic_flag):
-            if detail:
-                parts.append(detail)
-        api_md_lines.append("\n".join(parts))
-    api_md = "\n\n".join(api_md_lines) or "None detected"
+        purpose_hint = purpose if purpose and purpose != "inline call" else (comment or "—")
+        api_table_rows.append(
+            f"| {i} | `{method}` | `{endpoint}` | {when} | {purpose_hint} |"
+        )
 
-    # Seed EXCEL_DATA — one object per API call (AI fills in the <<fill>> placeholders)
-    excel_seed = []
+    if api_table_rows:
+        api_table = (
+            "| # | Method | Endpoint | When Called | Purpose |\n"
+            "|---|--------|----------|-------------|--------|\n"
+            + "\n".join(api_table_rows)
+        )
+    else:
+        api_table = "_No API calls detected in this component._"
+
+    # ── Excel seed ─────────────────────────────────────────────────────────────
     screen_name = (
         component
         .replace(".vue", "").replace(".jsx", "").replace(".tsx", "")
         .replace("_", " ").replace("-", " ")
     )
-    effective_calls = api_calls or [{}]
-    for call in effective_calls:
+    excel_seed = []
+    for call in (api_calls or [{}]):
         excel_seed.append({
-            "screen_name": screen_name,
-            "route": path,
+            "screen_name":    screen_name,
+            "route":          path,
             "component_path": comp_file if comp_file != "not found" else "",
-            "api_endpoint": call.get("endpoint", ""),
-            "http_method": call.get("method", ""),
-            "request_payload": "<<fill: list all query params / body fields with type and required status>>",
-            "conditional_logic": "<<fill: describe conditional UI rendering, field visibility rules, business conditions>>",
-            "validation_rules": "<<fill: list all form/input validation rules in this component>>",
+            "frontend_url":   example_url if example_url != "N/A" else "",
+            "api_endpoint":   call.get("endpoint", ""),
+            "http_method":    call.get("method", ""),
+            "when_called":    "<<fill: on page load / on button click / on form submit / on data change>>",
+            "purpose":        "<<fill: describe what this API call does for the user and what data it returns>>",
         })
 
+    # ── Unknowns row ──────────────────────────────────────────────────────────
+    unknowns_md = ""
+    if unknowns:
+        unknowns_md = (
+            "\n## Notes\n\n"
+            + "\n".join(f"- {u}" for u in unknowns)
+            + "\n\n"
+        )
+
     return (
-        f"Generate markdown documentation for the following frontend page.\n"
-        f"Output ONLY the markdown followed by an EXCEL_DATA JSON block. No intro text.\n\n"
-        f"Analyze the COMPONENT SOURCE CODE below to fill in:\n"
-        f"  - Request Payload / Query Parameters: all API call params/body fields\n"
-        f"  - Conditional Logic: field visibility rules, business conditions, show/hide logic\n"
-        f"  - Validation Rules: all form/input validation rules\n"
-        f"  - For EACH API call: describe its specific business purpose based on when/where it fires\n\n"
-        f"IMPORTANT — API calls:\n"
-        f"  - Every call listed under 'Backend API Dependencies' is a REAL occurrence — document all of them\n"
-        f"  - Multiple calls to the same endpoint with different triggers (e.g. load vs. save) "
-        f"    represent DIFFERENT business operations — treat them separately\n"
-        f"  - For DYNAMIC urls, note they are computed at runtime and describe what they likely contain\n\n"
+        f"You are reverse-engineering a frontend page. Output ONLY the markdown and "
+        f"the EXCEL_DATA block. No intro text.\n\n"
+        f"Analyze the component source code below and:\n"
+        f"1. Write 2-3 sentences for '## What This Page Does' — describe the page's "
+        f"   business purpose, what data it shows, what user actions it supports. "
+        f"   Base this on the route name, component name, API endpoints called, and the source code.\n"
+        f"2. Fill in the '## APIs Called by This Page' table — for each row, replace "
+        f"   the 'When Called' and 'Purpose' columns with specific descriptions from the code. "
+        f"   Preserve the exact Method and Endpoint values from the table below.\n"
+        f"3. Do NOT add sections for child components, composables, state management, "
+        f"   request payloads, validation rules, or conditional logic.\n\n"
+        f"IMPORTANT — API call rules:\n"
+        f"  - Every row in the table is a REAL detected call — keep all of them\n"
+        f"  - Same endpoint with different triggers = different rows (keep both)\n"
+        f"  - For ⚡ dynamic URLs, describe what the runtime value likely is\n\n"
         f"INPUT JSON:\n{json.dumps(page, indent=2)}\n\n"
-        f"COMPONENT SOURCE CODE (analyze for payload fields, validation, conditional logic):\n"
+        f"COMPONENT SOURCE CODE:\n"
         f"```\n{code_snippet[:3000]}\n```\n\n"
         f"─────────────────────────────────────────────────────────\n\n"
-        f"# Page: `{path}`\n\n"
+        f"# Page: `{path}`{inferred_note}\n\n"
         f"| Field | Value |\n"
         f"|-------|-------|\n"
         f"| **Component** | `{component}` |\n"
-        f"| **Source file** | `{comp_file}` |\n"
-        f"| **Layout** | {layout} |\n"
-        f"| **Example URL** | `{example_url}` |\n\n"
+        f"| **Source File** | `{comp_file}` |\n"
+        f"| **Frontend URL** | `{example_url}` |\n\n"
         f"{verify_block}"
-        f"## Child Components\n{children_md}\n\n"
-        f"## Composables Used\n{composables_md}\n\n"
-        f"## Backend API Dependencies\n\n{api_md}\n\n"
-        f"## Request Payload / Query Parameters\n"
-        f"_For each API call above, list all query parameters or request body fields "
-        f"with name, type, required/optional, and description. "
-        f"Group by API call number if there are multiple calls._\n\n"
-        f"## Business Logic per API Call\n"
-        f"_For each API call above: describe what business operation it performs, "
-        f"when it fires (lifecycle, user action, etc.), what data it returns/sends, "
-        f"and how the UI reacts to the response (loading state, error handling, redirect, etc.)._\n\n"
-        f"## Conditional Logic\n"
-        f"_Describe conditional UI rendering, field visibility rules, and business logic conditions found in this component._\n\n"
-        f"## Validation Rules\n"
-        f"_List all form/input validation rules applied on this page (field, rule, error message if known)._\n\n"
-        f"## State Management\n{state_md}\n\n"
-        f"## Warnings\n{unknowns_md}\n\n"
+        f"## What This Page Does\n\n"
+        f"_[AI: write 2-3 sentences here]_\n\n"
+        f"## APIs Called by This Page\n\n"
+        f"{api_table}\n\n"
+        f"{unknowns_md}"
         f"---\n\n"
         f"After the markdown above, output EXACTLY this block.\n"
-        f"Replace every <<fill: ...>> with real values derived from the source code analysis.\n"
-        f"Use plain text (no markdown) inside all JSON string values.\n\n"
+        f"Replace every <<fill: ...>> with real values from the source code analysis.\n"
+        f"Use plain text (no markdown) inside JSON string values.\n\n"
         f"<!-- EXCEL_DATA\n"
         f"{json.dumps(excel_seed, indent=2)}\n"
         f"-->"

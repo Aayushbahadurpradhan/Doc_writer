@@ -969,6 +969,64 @@ _PARAM_EXAMPLES: Dict[str, str] = {
 }
 
 
+def _infer_route_from_file_path(filepath: str, project_root: str) -> Optional[str]:
+    """
+    Infer a frontend route from the file's position in the project tree.
+
+    Handles Nuxt / Next.js `pages/` directory convention:
+      pages/home.vue           → /home
+      pages/admin/index.vue    → /admin
+      pages/users/[id].vue     → /users/:id   (Next.js)
+      pages/users/_id.vue      → /users/:id   (Nuxt 2)
+
+    Falls back to `views/` heuristic for Vue CLI projects:
+      src/views/Admin/Dashboard.vue → /admin/dashboard  (inferred)
+
+    Returns None when no useful route can be determined.
+    """
+    try:
+        rel = os.path.relpath(filepath, project_root).replace("\\", "/")
+    except ValueError:
+        return None
+
+    # ── Nuxt / Next.js pages/ convention ─────────────────────────────────────
+    pages_m = re.match(r"(?:src/)?pages?/(.+)", rel, re.IGNORECASE)
+    if pages_m:
+        route_part = pages_m.group(1)
+        # Strip extension
+        route_part = re.sub(r"\.(vue|[jt]sx?|mdx?)$", "", route_part, flags=re.IGNORECASE)
+        # Next.js: [[...slug]] → :slug, [id] → :id
+        route_part = re.sub(r"\[{1,2}\.\.\.(\w+)\]{1,2}", r":\1", route_part)
+        route_part = re.sub(r"\[(\w+)\]", r":\1", route_part)
+        # Nuxt 2: _id.vue → :id
+        route_part = re.sub(r"(?:^|/)_(\w+)", r"/:\1", route_part)
+        # Collapse trailing /index
+        route_part = re.sub(r"(?:/index$|^index$)", "", route_part)
+        route_part = route_part.strip("/")
+        return "/" + route_part if route_part else "/"
+
+    # ── views/ heuristic (Vue CLI / Vite) ────────────────────────────────────
+    views_m = re.match(r"(?:src/)?views?/(.+)", rel, re.IGNORECASE)
+    if views_m:
+        route_part = views_m.group(1)
+        route_part = re.sub(r"\.(vue|[jt]sx?|mdx?)$", "", route_part, flags=re.IGNORECASE)
+        # PascalCase segments → kebab
+        route_part = re.sub(
+            r"([a-z0-9])([A-Z])", lambda m: m.group(1) + "-" + m.group(2).lower(),
+            route_part,
+        )
+        route_part = route_part.lower()
+        # Drop common suffixes stripped from component names
+        route_part = re.sub(r"[-/](view|page|screen|component)$", "", route_part)
+        # Collapse trailing /index
+        route_part = re.sub(r"(?:/index$|^index$)", "", route_part)
+        route_part = route_part.strip("/")
+        if route_part:
+            return "/" + route_part
+
+    return None
+
+
 def _build_example_url(path: str, base_url: str = "http://localhost:8000") -> str:
     """
     Build an example browser URL from a route path.
@@ -1216,16 +1274,19 @@ def detect_pages(project_root: str) -> List[dict]:
     raw_routes = deduped
 
     # If no router files found, treat ALL .vue/.jsx/.tsx files as pages
+    # and try to infer route from file path (Nuxt/Next pages/ or views/ heuristic)
     if not raw_routes:
         for fpath in all_files:
             ext = os.path.splitext(fpath)[1]
             if ext in (".vue", ".jsx", ".tsx"):
-                fname = os.path.basename(fpath)
+                fname          = os.path.basename(fpath)
+                inferred_route = _infer_route_from_file_path(fpath, project_root)
                 raw_routes.append({
-                    "path":      "UNKNOWN",
+                    "path":      inferred_route or "UNKNOWN",
                     "component": fname,
                     "lazy":      False,
                     "source":    fname,
+                    "inferred":  bool(inferred_route),
                 })
 
     print(f"  [{len(raw_routes)} pages/components detected]")
@@ -1305,10 +1366,16 @@ def detect_pages(project_root: str) -> List[dict]:
                 _unique_calls.append(call)
         api_calls = _unique_calls
 
+        # ── Child components: local imports ───────────────────────────────────
+        children = _extract_imports(content) if content else []
+
+        # ── Child components: template component tags (Vue 2 / Vuetify) ──────
+        template_components = _extract_template_components(content) if content else []
+
         # ── Scan child components for their API calls (1 level deep) ─────────
         child_calls: List[dict] = []
         scanned_children: Set[str] = set()
-        for child_name in list(children) + list(template_components) if content else []:
+        for child_name in list(children) + list(template_components):
             bare_child = os.path.splitext(child_name)[0].lower()
             bare_strip = re.sub(r"(view|page|component)$", "", bare_child)
             child_file = _file_index.get(bare_child) or _file_index.get(bare_strip)
@@ -1329,12 +1396,6 @@ def detect_pages(project_root: str) -> List[dict]:
             if key not in _child_seen:
                 _child_seen.add(key)
                 api_calls.append(call)
-
-        # ── Child components: local imports ───────────────────────────────────
-        children = _extract_imports(content) if content else []
-
-        # ── Child components: template component tags (Vue 2 / Vuetify) ──────
-        template_components = _extract_template_components(content) if content else []
 
         # ── Layout ───────────────────────────────────────────────────────────
         layout = _extract_layout(content) if content else "UNKNOWN"
@@ -1371,9 +1432,23 @@ def detect_pages(project_root: str) -> List[dict]:
         validation_static    = _extract_validation_rules(content) if content else []
         conditional_static   = _extract_conditional_logic(content) if content else []
 
+        # ── Route inference for UNKNOWN paths ────────────────────────────────
+        # If the route says UNKNOWN (e.g. Inertia pages without a PHP route mapping)
+        # but we found the component file, try to infer the route from file location.
+        route_path = route.get("path", "UNKNOWN")
+        is_inferred = route.get("inferred", False)
+        if route_path == "UNKNOWN" and comp_file:
+            inferred_r = _infer_route_from_file_path(comp_file, project_root)
+            if inferred_r:
+                route_path  = inferred_r
+                is_inferred = True
+                # Recompute example_url with the inferred path
+                example_url = _build_example_url(route_path)
+
         pages.append({
-            "path":                route.get("path", "UNKNOWN"),
+            "path":                route_path,
             "component":           component,
+            "inferred":            is_inferred,
             "component_file":      (
                 os.path.relpath(comp_file, project_root).replace("\\", "/")
                 if comp_file else None

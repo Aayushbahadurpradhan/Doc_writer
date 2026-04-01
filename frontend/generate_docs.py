@@ -48,16 +48,16 @@ def _extract_page_group(page: dict) -> str:
     """
     Determine the documentation folder group for a page.
 
-    - Pages with path=UNKNOWN or missing component file → 'undocumented'
+    - Pages with path=UNKNOWN, inferred route, or missing component file → 'undocumented'
     - /admin/*   → 'admin'
     - /bill/list → 'bill'
     - /          → 'home'
     - /:id       → 'detail'
     """
-    # Undocumented: no route recorded OR component file not found
     path = page.get("path", "UNKNOWN")
     has_no_file = any("Component file not found" in u for u in page.get("unknowns", []))
-    if path == "UNKNOWN" or has_no_file:
+    inferred    = page.get("inferred", False)
+    if path == "UNKNOWN" or has_no_file or inferred:
         return "undocumented"
 
     if not path or path == "/":
@@ -176,13 +176,16 @@ def generate_pages_md(
     # ── Master index ──────────────────────────────────────────────────────────
     _write_frontend_index(groups, output_root)
 
+    # ── API network map (new) ─────────────────────────────────────────────────
+    _write_api_network_map(groups, output_root)
+
     # ── Undocumented APIs ─────────────────────────────────────────────────────
     _write_missing_apis(all_api_calls, output_root, config, no_ai)
 
     # ── Excel output ──────────────────────────────────────────────────────────
     excel_path = _write_frontend_excel(all_excel_rows, output_root)
     if excel_path:
-        print(f"  [EXCEL] Frontend detail -> {excel_path}")
+        print(f"  [EXCEL] Frontend API map -> {excel_path}")
 
     documented   = sum(len(v) for k, v in groups.items() if k != "undocumented")
     undocumented = len(groups.get("undocumented", []))
@@ -190,7 +193,7 @@ def generate_pages_md(
     print(f"     Groups   : {', '.join(k for k in sorted(groups.keys()) if k != 'undocumented')}")
     print(f"     Documented   : {documented} pages")
     if undocumented:
-        print(f"     Undocumented : {undocumented} components (no route or file)")
+        print(f"     Undocumented : {undocumented} components (no confirmed route)")
 
 
 def _parse_excel_data(content: str) -> List[dict]:
@@ -206,46 +209,58 @@ def _parse_excel_data(content: str) -> List[dict]:
 
 
 def _merge_static_fields(page: dict, excel_rows: List[dict]) -> None:
-    """Overwrite static fields (route, component_path) from the page dict in-place."""
-    path      = page.get("path", "")
-    comp_file = page.get("file") or page.get("component_file") or ""
+    """Overwrite static fields (route, component_path, frontend_url) from page dict in-place."""
+    path        = page.get("path", "")
+    comp_file   = page.get("file") or page.get("component_file") or ""
+    example_url = page.get("example_url") or ""
     for row in excel_rows:
         if not row.get("route"):
             row["route"] = path
         if not row.get("component_path"):
             row["component_path"] = comp_file
+        if not row.get("frontend_url"):
+            row["frontend_url"] = example_url
 
 
 def _build_static_excel_rows(page: dict) -> List[dict]:
     """Build Excel rows from static page data — used when AI is disabled or fails."""
-    path        = page.get("path", "UNKNOWN")
-    component   = page.get("component", "UNKNOWN")
-    comp_file   = page.get("file") or page.get("component_file") or ""
-    api_calls   = page.get("api_calls", [])
+    path      = page.get("path", "UNKNOWN")
+    component = page.get("component", "UNKNOWN")
+    comp_file = page.get("file") or page.get("component_file") or ""
+    api_calls = page.get("api_calls", [])
+    example_url = page.get("example_url") or ""
     screen_name = (
         component
         .replace(".vue", "").replace(".jsx", "").replace(".tsx", "")
         .replace("_", " ").replace("-", " ")
     )
 
-    # Use statically-extracted fields when available
-    validation_items  = page.get("validation_rules_static", [])
-    conditional_items = page.get("conditional_logic_static", [])
-    validation_str    = "; ".join(validation_items)  if validation_items  else ""
-    conditional_str   = "; ".join(conditional_items) if conditional_items else ""
-
     rows = []
-    effective = api_calls or [{}]
-    for call in effective:
+    for call in (api_calls or [{}]):
+        trigger_name = call.get("trigger_name", "")
+        trigger      = call.get("trigger", "")
+        purpose      = call.get("purpose", "")
+
+        if trigger_name:
+            when = trigger_name
+        elif trigger == "lifecycle":
+            when = "On page load"
+        elif trigger == "event_handler":
+            when = "On user action"
+        elif trigger == "watcher":
+            when = "On data change"
+        else:
+            when = ""
+
         rows.append({
-            "screen_name":       screen_name,
-            "route":             path,
-            "component_path":    comp_file,
-            "api_endpoint":      call.get("endpoint", ""),
-            "http_method":       call.get("method", ""),
-            "request_payload":   "",
-            "conditional_logic": conditional_str,
-            "validation_rules":  validation_str,
+            "screen_name":    screen_name,
+            "route":          path,
+            "component_path": comp_file,
+            "frontend_url":   example_url,
+            "api_endpoint":   call.get("endpoint", ""),
+            "http_method":    call.get("method", ""),
+            "when_called":    when,
+            "purpose":        purpose if purpose and purpose != "inline call" else "",
         })
     return rows
 
@@ -254,11 +269,9 @@ def _write_frontend_excel(rows: List[dict], output_root: str) -> str:
     """
     Write frontend_detail.xlsx with one row per (page, API call).
 
-    Columns match the reference sheet:
-      #, Screen Name, Route / URL, Vue Component Path, API Endpoint,
-      HTTP Method, Request Payload / Query Parameters, Conditional Logic,
-      Validation Rules, Open Questions / Notes, Answer / Decision,
-      Answered By, Date Answered
+    Columns:
+      #, Screen Name, Route / URL, Component Path, Frontend URL,
+      API Endpoint, HTTP Method, When Called, Purpose
     """
     if not rows:
         return ""
@@ -273,18 +286,18 @@ def _write_frontend_excel(rows: List[dict], output_root: str) -> str:
         "#",
         "Screen Name",
         "Route / URL",
-        "Vue Component Path",
+        "Component Path",
+        "Frontend URL",
         "API Endpoint",
         "HTTP Method",
-        "Request Payload / Query Parameters",
-        "Conditional Logic",
-        "Validation Rules",
+        "When Called",
+        "Purpose / What It Does",
     ]
-    COL_WIDTHS = [5, 30, 25, 42, 48, 13, 48, 48, 42]
+    COL_WIDTHS = [5, 28, 25, 42, 45, 48, 13, 30, 55]
 
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Frontend Detail"
+    ws.title = "Frontend API Map"
 
     header_fill = PatternFill("solid", fgColor="1F4E79")
     header_font = Font(bold=True, color="FFFFFF", size=11)
@@ -306,11 +319,11 @@ def _write_frontend_excel(rows: List[dict], output_root: str) -> str:
             row.get("screen_name", ""),
             row.get("route", ""),
             row.get("component_path", ""),
+            row.get("frontend_url", ""),
             row.get("api_endpoint", ""),
             row.get("http_method", ""),
-            row.get("request_payload", ""),
-            row.get("conditional_logic", ""),
-            row.get("validation_rules", ""),
+            row.get("when_called", ""),
+            row.get("purpose", ""),
         ])
         for col_idx in range(1, len(HEADERS) + 1):
             ws.cell(row=row_num + 1, column=col_idx).alignment = wrap_top
@@ -318,57 +331,60 @@ def _write_frontend_excel(rows: List[dict], output_root: str) -> str:
     ws.freeze_panes = "B2"
     ws.auto_filter.ref = f"A1:{ws.cell(row=1, column=len(HEADERS)).column_letter}1"
 
-    excel_path = os.path.join(output_root, "frontend_detail.xlsx")
+    excel_path = os.path.join(output_root, "frontend_api_map.xlsx")
     wb.save(excel_path)
     return excel_path
 
 
 def _write_group_readme(group: str, pages: List[dict], group_dir: str) -> None:
-    """Write README.md for each page group with rich detail."""
+    """Write README.md for each page group — network-trace focused."""
     readme_path = os.path.join(group_dir, "README.md")
-
-    is_undoc = group == "undocumented"
+    is_undoc    = group == "undocumented"
 
     with open(readme_path, "w", encoding="utf-8") as f:
         if is_undoc:
             f.write("# Undocumented Components\n\n")
             f.write(
-                "These components were detected but either have no route mapping "
-                "or their source file could not be located.\n\n"
+                "These components were detected but either have no confirmed route mapping, "
+                "their route was inferred from file path, or their source file could not be located.\n\n"
             )
         else:
             f.write(f"# /{group} Pages\n\n")
             f.write(f"Route prefix: **`/{group}`**\n\n")
 
-        f.write(f"## Summary\n\n")
-        f.write(f"| Route | Component | Layout | Children | APIs | State | Example URL |\n")
-        f.write(f"|-------|-----------|--------|----------|------|-------|-------------|\n")
+        f.write("## Summary\n\n")
+        f.write("| Route | Component | Frontend URL | # APIs | APIs Called |\n")
+        f.write("|-------|-----------|-------------|--------|-------------|\n")
 
         for page in pages:
-            path                = page.get("path", "UNKNOWN")
-            component           = page.get("component", "UNKNOWN")
-            layout              = page.get("layout", "UNKNOWN")
-            children            = page.get("children", [])
-            template_components = page.get("template_components", [])
-            api_calls           = page.get("api_calls", [])
-            state_mgmt          = page.get("state_management", [])
-            example_url         = page.get("example_url", "N/A")
+            path        = page.get("path", "UNKNOWN")
+            component   = page.get("component", "UNKNOWN")
+            api_calls   = page.get("api_calls", [])
+            example_url = page.get("example_url") or "—"
+            inferred    = page.get("inferred", False)
 
-            page_file    = _safe_page_filename(path)
-            child_count  = len(children) or len(template_components)
-            state_short  = ", ".join(
-                dict.fromkeys(s.split(":")[0] for s in state_mgmt)
-            ) if state_mgmt else "—"
-            layout_short = layout if layout != "UNKNOWN" else "—"
+            page_file = _safe_page_filename(path)
+            path_label = f"{path} _(inferred)_" if inferred else path
+
+            # Compact unique endpoint list (max 4 shown inline)
+            unique_eps = list(dict.fromkeys(
+                c.get("endpoint", "")
+                for c in api_calls
+                if c.get("endpoint") and c.get("endpoint") != "UNKNOWN"
+            ))
+            if unique_eps:
+                ep_str = ", ".join(f"`{e}`" for e in unique_eps[:4])
+                if len(unique_eps) > 4:
+                    ep_str += f" _(+{len(unique_eps)-4} more)_"
+            else:
+                ep_str = "—"
 
             f.write(
-                f"| [{path}]({page_file}) "
+                f"| [{path_label}]({page_file}) "
                 f"| `{component}` "
-                f"| {layout_short} "
-                f"| {child_count} "
+                f"| `{example_url}` "
                 f"| {len(api_calls)} "
-                f"| {state_short} "
-                f"| `{example_url}` |\n"
+                f"| {ep_str} |\n"
             )
 
         f.write("\n---\n")
@@ -378,29 +394,30 @@ def _write_frontend_index(groups: Dict[str, List[dict]], output_root: str) -> No
     """Write master index for all frontend pages."""
     index_path = os.path.join(output_root, "index.md")
 
-    # Separate documented from undocumented
-    doc_groups   = {k: v for k, v in groups.items() if k != "undocumented"}
-    undoc_pages  = groups.get("undocumented", [])
+    doc_groups  = {k: v for k, v in groups.items() if k != "undocumented"}
+    undoc_pages = groups.get("undocumented", [])
 
-    total_pages  = sum(len(v) for v in doc_groups.values())
-    total_apis   = sum(
+    total_pages = sum(len(v) for v in doc_groups.values())
+    total_apis  = sum(
         len(p.get("api_calls", [])) for pages in doc_groups.values() for p in pages
     )
 
     with open(index_path, "w", encoding="utf-8") as f:
         f.write("# Frontend Documentation\n\n")
-        f.write(f"**Documented pages**: {total_pages} | **API dependencies**: {total_apis}")
+        f.write(f"**Documented pages**: {total_pages} | **API calls detected**: {total_apis}")
         if undoc_pages:
             f.write(f" | **Undocumented**: {len(undoc_pages)}")
         f.write("\n\n")
+        f.write("> See [api_network_map.md](api_network_map.md) for the full "
+                "Frontend → Backend API dependency map.\n\n")
 
         f.write("## Page Groups\n\n")
         f.write("| Group | Route Prefix | Pages | APIs |\n")
         f.write("|-------|-------------|-------|------|\n")
 
         for group_name in sorted(doc_groups.keys()):
-            gp       = doc_groups[group_name]
-            api_cnt  = sum(len(p.get("api_calls", [])) for p in gp)
+            gp      = doc_groups[group_name]
+            api_cnt = sum(len(p.get("api_calls", [])) for p in gp)
             f.write(
                 f"| [{group_name}](./{group_name}/README.md) "
                 f"| `/{group_name}` "
@@ -426,6 +443,116 @@ def _safe_endpoint_filename(endpoint: str) -> str:
     safe = re.sub(r"[^\w]", "_", safe).strip("_") or "unknown"
     safe = re.sub(r"_+", "_", safe)
     return safe + ".md"
+
+
+def _write_api_network_map(groups: Dict[str, List[dict]], output_root: str) -> None:
+    """
+    Write api_network_map.md — the master Frontend → Backend API dependency map.
+
+    Shows every frontend page and ALL backend API endpoints it calls,
+    equivalent to what you'd see in the browser Network tab when visiting each page.
+
+    Format per page:
+      ### `/route`
+      Component: `Foo.vue`  |  URL: https://...
+      ```
+      GET     /api/userinfo       ← onMounted
+      POST    /api/login          ← On form submit
+      GET     /api/analytics      ← onMounted
+      ```
+    """
+    out_path = os.path.join(output_root, "api_network_map.md")
+
+    all_pages: List[dict] = []
+    for group_name in sorted(groups.keys()):
+        all_pages.extend(groups[group_name])
+
+    total_pages = len(all_pages)
+    total_calls = sum(len(p.get("api_calls", [])) for p in all_pages)
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("# Frontend → Backend API Network Map\n\n")
+        f.write(
+            "> Shows which backend APIs each frontend page calls — equivalent to\n"
+            "> what you see in the browser **Network** tab when visiting each page.\n\n"
+        )
+        f.write(f"**Pages**: {total_pages} | **Total API calls detected**: {total_calls}\n\n")
+        f.write("---\n\n")
+
+        # ── Quick-reference table ──────────────────────────────────────────────
+        f.write("## Quick Reference\n\n")
+        f.write("| Frontend Page | Frontend URL | APIs Called |\n")
+        f.write("|--------------|-------------|-------------|\n")
+        for page in all_pages:
+            path        = page.get("path", "UNKNOWN")
+            example_url = page.get("example_url") or "—"
+            api_calls   = page.get("api_calls", [])
+            inferred    = page.get("inferred", False)
+
+            label = f"{path} _(inferred)_" if inferred else path
+
+            unique_eps = list(dict.fromkeys(
+                c.get("endpoint", "")
+                for c in api_calls
+                if c.get("endpoint") and c.get("endpoint") != "UNKNOWN"
+            ))
+            if unique_eps:
+                ep_str = ", ".join(f"`{e}`" for e in unique_eps[:5])
+                if len(unique_eps) > 5:
+                    ep_str += f" _(+{len(unique_eps)-5} more)_"
+            else:
+                ep_str = "—"
+
+            f.write(f"| `{label}` | `{example_url}` | {ep_str} |\n")
+
+        f.write("\n---\n\n")
+
+        # ── Detailed per-page network trace ────────────────────────────────────
+        f.write("## Detailed API Calls per Page\n\n")
+        for page in all_pages:
+            path        = page.get("path", "UNKNOWN")
+            component   = page.get("component", "UNKNOWN")
+            example_url = page.get("example_url") or ""
+            api_calls   = page.get("api_calls", [])
+            inferred    = page.get("inferred", False)
+
+            inferred_note = " _(route inferred from file path)_" if inferred else ""
+            f.write(f"### `{path}`{inferred_note}\n\n")
+            f.write(f"**Component**: `{component}`")
+            if example_url:
+                f.write(f" | **URL**: [{example_url}]({example_url})")
+            f.write("\n\n")
+
+            if api_calls:
+                f.write("```\n")
+                for call in api_calls:
+                    method       = (call.get("method") or "?").upper().ljust(8)
+                    endpoint     = call.get("endpoint", "UNKNOWN")
+                    trigger_name = call.get("trigger_name", "")
+                    trigger      = call.get("trigger", "")
+                    purpose      = call.get("purpose", "")
+
+                    if trigger_name:
+                        hint = f"← {trigger_name}"
+                    elif trigger == "lifecycle":
+                        hint = "← on page load"
+                    elif trigger == "event_handler":
+                        hint = "← on user action"
+                    elif trigger == "watcher":
+                        hint = "← on data change"
+                    elif purpose and purpose != "inline call":
+                        hint = f"← {purpose}"
+                    else:
+                        hint = ""
+
+                    f.write(f"{method} {endpoint}  {hint}\n".rstrip() + "\n")
+                f.write("```\n\n")
+            else:
+                f.write("_No API calls detected._\n\n")
+
+    print(f"  [MAP] API network map → {out_path}")
+
+
 
 
 def _write_missing_apis(
@@ -900,175 +1027,98 @@ def _skeleton_undoc_api(endpoint: str, usages: List[dict]) -> str:
 
 
 def _skeleton_page(page: dict) -> str:
-    """No-AI fallback: produce structured markdown from extracted page data."""
+    """No-AI fallback: produce network-trace-focused markdown from extracted page data."""
     from frontend.detect_pages import \
         _build_example_url  # lazy import to avoid circular
 
-    path                = page.get("path", "UNKNOWN")
-    component           = page.get("component", "UNKNOWN")
-    comp_file           = page.get("component_file")        # None means not found
-    example_url         = page.get("example_url")           # None means unrouted
-    layout              = page.get("layout", "UNKNOWN")
-    children            = page.get("children", [])          # local import list
-    template_components = page.get("template_components", [])  # template scan
-    composables         = page.get("composables", [])
-    api_calls           = page.get("api_calls", [])
-    state_mgmt          = page.get("state_management", [])
-    unknowns            = page.get("unknowns", [])
+    path      = page.get("path", "UNKNOWN")
+    component = page.get("component", "UNKNOWN")
+    comp_file = page.get("component_file")
+    example_url = page.get("example_url")
+    api_calls = page.get("api_calls", [])
+    unknowns  = page.get("unknowns", [])
+    inferred  = page.get("inferred", False)
 
-    # Re-compute example_url on the fly if missing/stale (e.g. old cached JSON)
     if not example_url or str(example_url).strip() in ("N/A", "None", "null", ""):
         example_url = _build_example_url(path)
 
-    # ── Example URL row ────────────────────────────────────────────────────────
-    if example_url:
-        url_row     = f"| **Example URL** | `{example_url}` |\n"
-        url_callout = f"> To verify this page open: **[{example_url}]({example_url})**\n\n"
-    else:
-        url_row     = "| **Example URL** | _Route not mapped_ |\n"
-        url_callout = "> Route has no URL mapping — component may be rendered as a modal or child.\n\n"
-
-    # ── Source file display ────────────────────────────────────────────────────
     comp_file_display = f"`{comp_file}`" if comp_file else "_not found on disk_"
+    inferred_row = "| **Route Source** | _Inferred from file path_ |\n" if inferred else ""
 
-    # ── Child components ──────────────────────────────────────────────────────
-    if children:
-        children_md = "\n".join(f"- `{c}` _(imported)_" for c in children)
-    elif template_components:
-        children_md = "\n".join(f"- `{c}`" for c in template_components)
-    elif comp_file:
-        # File was found and scanned but contains no child components
-        children_md = "_None — no imported or template sub-components detected_"
+    if example_url:
+        url_row     = f"| **Frontend URL** | `{example_url}` |\n"
+        url_callout = f"> To verify: **[{example_url}]({example_url})**\n\n"
     else:
-        # File could not be opened — we never scanned it
-        children_md = "_Could not scan — source file not found on disk_"
+        url_row     = "| **Frontend URL** | _Route not mapped_ |\n"
+        url_callout = "> Route has no URL mapping — component may be a modal or child view.\n\n"
 
-    # ── Composables ───────────────────────────────────────────────────────────
-    if composables:
-        composables_md = "\n".join(f"- `{c}()`" for c in composables)
-    elif comp_file:
-        composables_md = "_None — no composable/hook calls detected_"
-    else:
-        composables_md = "_Could not scan — source file not found on disk_"
-
-    # ── State management ──────────────────────────────────────────────────────
-    if state_mgmt:
-        by_type: Dict[str, List[str]] = defaultdict(list)
-        for s in state_mgmt:
-            parts = s.split(":", 1)
-            by_type[parts[0]].append(parts[1] if len(parts) > 1 else parts[0])
-        state_lines = []
-        for stype, names in by_type.items():
-            state_lines.append(f"**{stype}**: {', '.join(f'`{n}`' for n in names)}")
-        state_md = "\n".join(state_lines)
-    elif comp_file:
-        state_md = "_None — no Pinia/Vuex/Redux usage detected_"
-    else:
-        state_md = "_Could not scan — source file not found on disk_"
-
-    # ── API calls ─────────────────────────────────────────────────────────────
-    api_lines  = []
-    biz_lines  = []   # business-logic section
+    # ── API network-trace table ───────────────────────────────────────────────
+    api_rows = []
     for i, call in enumerate(api_calls, 1):
-        method       = call.get("method", "?").upper()
+        method       = (call.get("method") or "?").upper()
         endpoint     = call.get("endpoint", "UNKNOWN")
-        called_from  = call.get("called_from", "?")
+        trigger_name = call.get("trigger_name", "")
+        trigger      = call.get("trigger", "unknown")
         composable   = call.get("composable")
-        via          = call.get("via", "direct")
         via_child    = call.get("via_child")
         purpose      = call.get("purpose", "")
-        trigger      = call.get("trigger", "")
-        trigger_name = call.get("trigger_name", "")
-        fn_name      = call.get("function_name", "")
         comment      = call.get("comment", "")
         dynamic      = call.get("dynamic", False)
 
-        source_note = f"via `{composable}()`" if composable else f"in `{called_from}`"
-        if via_child:
-            source_note += f" (child: `{via_child}`)"
-        dynamic_flag = " ⚡dynamic" if dynamic else ""
+        if trigger_name:
+            when = f"`{trigger_name}`"
+        elif trigger == "lifecycle":
+            when = "On page load"
+        elif trigger == "event_handler":
+            when = "On user action"
+        elif trigger == "watcher":
+            when = "On data change"
+        elif trigger == "function_call":
+            fn = call.get("function_name", "")
+            when = f"In `{fn}()`" if fn else "On function call"
+        else:
+            when = "On function call"
 
-        api_lines.append(
-            f"| {i} | `{method}` | `{endpoint}`{dynamic_flag} | {source_note} | `{via}` |"
+        if composable:
+            when += f" via `{composable}()`"
+        if via_child:
+            when += f" (child: `{via_child}`)"
+        if dynamic:
+            endpoint += " ⚡"
+
+        short_purpose = purpose if purpose and purpose != "inline call" else (comment or "—")
+        api_rows.append(
+            f"| {i} | `{method}` | `{endpoint}` | {when} | {short_purpose} |"
         )
 
-        # Build business logic entry
-        biz_parts = [f"**Call {i}: `{method} {endpoint}`**"]
-        if purpose and purpose != "inline call":
-            biz_parts.append(f"- **Purpose**: {purpose}")
-        if trigger_name:
-            biz_parts.append(f"- **Trigger**: `{trigger_name}` ({trigger})")
-        elif trigger and trigger not in ("unknown", "inline"):
-            biz_parts.append(f"- **Trigger**: {trigger}")
-        if fn_name:
-            biz_parts.append(f"- **In function**: `{fn_name}()`")
-        if comment:
-            biz_parts.append(f"- **Code note**: _{comment}_")
-        if via_child:
-            biz_parts.append(f"- **Via child component**: `{via_child}`")
-        if dynamic:
-            biz_parts.append("- **Note**: URL is dynamically computed at runtime")
-        biz_lines.append("\n".join(biz_parts))
-
-    if api_lines:
+    if api_rows:
         api_md = (
-            "| # | Method | Endpoint | Source | Transport |\n"
-            "|---|--------|----------|--------|-----------|\n"
-            + "\n".join(api_lines)
+            "| # | Method | Endpoint | When Called | Purpose |\n"
+            "|---|--------|----------|-------------|--------|\n"
+            + "\n".join(api_rows)
         )
     elif comp_file:
-        api_md = "_None — no axios/fetch/form calls detected_"
+        api_md = "_No API calls detected in this component._"
     else:
-        api_md = "_Could not scan — source file not found on disk_"
+        api_md = "_Component source not found — could not scan for API calls._"
 
-    biz_md = "\n\n".join(biz_lines) if biz_lines else "_See API Dependencies table above_"
-
-    # ── Unknowns / warnings ───────────────────────────────────────────────────
-    validation_static  = page.get("validation_rules_static", [])
-    conditional_static = page.get("conditional_logic_static", [])
-
-    unknowns_md = (
-        "\n".join(f"- {u}" for u in unknowns)
-        if unknowns else "_None_"
-    )
-
-    validation_md = (
-        "\n".join(f"- {r}" for r in validation_static)
-        if validation_static
-        else "_Static extraction only \u2014 run with AI enabled to infer validation rules._"
-    )
-    conditional_md = (
-        "\n".join(f"- {r}" for r in conditional_static)
-        if conditional_static
-        else "_Static extraction only \u2014 run with AI enabled to infer conditional rendering rules._"
-    )
+    unknowns_md = ""
+    if unknowns:
+        unknowns_md = "\n## Notes\n\n" + "\n".join(f"- {u}" for u in unknowns) + "\n\n"
 
     return (
         f"# `{path}`\n\n"
         f"| Field | Value |\n"
         f"|-------|-------|\n"
         f"| **Component** | `{component}` |\n"
-        f"| **Source file** | {comp_file_display} |\n"
-        f"| **Layout** | {layout} |\n"
+        f"| **Source File** | {comp_file_display} |\n"
+        f"{inferred_row}"
         f"{url_row}\n"
         f"{url_callout}"
-        f"## Child Components\n\n"
-        f"{children_md}\n\n"
-        f"## Composables Used\n\n"
-        f"{composables_md}\n\n"
-        f"## Backend API Dependencies\n\n"
+        f"## What This Page Does\n\n"
+        f"_Enable AI to generate a description of this page's business purpose._\n\n"
+        f"## APIs Called by This Page\n\n"
         f"{api_md}\n\n"
-        f"## Business Logic per API Call\n\n"
-        f"{biz_md}\n\n"
-        f"## Request Payload / Query Parameters\n\n"
-        f"_Static extraction only — run with AI enabled to infer payload fields._\n\n"
-        f"## Conditional Logic\n\n"
-        f"{conditional_md}\n\n"
-        f"## Validation Rules\n\n"
-        f"{validation_md}\n\n"
-        f"## State Management\n\n"
-        f"{state_md}\n\n"
-        f"## Warnings\n\n"
-        f"{unknowns_md}\n\n"
+        f"{unknowns_md}"
         f"---"
-    )    
+    )

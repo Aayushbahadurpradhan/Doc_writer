@@ -14,6 +14,7 @@ Missing / incomplete rows are collected into a "⚠ Needs Fill" sheet in each
 workbook so devs know exactly what still needs manual entry or AI generation.
 """
 
+import argparse
 import os
 import re
 import sys
@@ -248,7 +249,16 @@ def parse_business_md(path):
             "_ext_apis": ext_apis,
             "_files":    files,
         })
-    return results
+
+    # ── Bug fix #4: deduplicate endpoints — same http_method+endpoint keeps first ──
+    seen: set = set()
+    deduped = []
+    for ep in results:
+        key = (ep["http_method"], ep["endpoint"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(ep)
+    return deduped
 
 
 def parse_api_md(path):
@@ -273,9 +283,12 @@ def parse_api_md(path):
         # Strip leading HTTP verb if present: "GET /v1/..." → "/v1/..."
         parts = raw_ep.split()
         url   = parts[1] if len(parts) >= 2 and parts[0].isupper() else raw_ep
+        # Bug fix #6: strip backtick wrappers from params like `{achYear}`, `{achMonth}`
+        raw_params = par_m.group(1).strip() if par_m else ""
+        clean_params = re.sub(r"`([^`]+)`", r"\1", raw_params)
         out[url] = {
-            "middleware": mw_m.group(1).strip()  if mw_m  else "",
-            "params":     par_m.group(1).strip() if par_m else "",
+            "middleware": mw_m.group(1).strip() if mw_m else "",
+            "params":     clean_params,
         }
     return out
 
@@ -479,6 +492,47 @@ def parse_responses_md(path):
     return out
 
 
+def _url_fuzzy_match(url: str, mapping: dict):
+    """
+    Bug fix #2: safe fuzzy match that uses path segments, not substring.
+
+    Returns the matching value from `mapping`, or an empty dict / empty list
+    depending on what values the mapping holds.
+
+    Rules (in priority order):
+      1. Exact match (already tried by caller)
+      2. Match by normalised path (collapse numeric IDs and path params to {id})
+      3. Match by path suffix (last 2 segments)
+    Never matches /bill → /billing (segmented, not substring).
+    """
+    empty = [] if mapping and isinstance(next(iter(mapping.values())), list) else {}
+
+    if not url or not mapping:
+        return empty
+
+    def _norm(u):
+        # collapse /{numeric} and /{word_param} to /{id}
+        u = re.sub(r"/\d+", "/{id}", u.lower())
+        u = re.sub(r"/\{[^}]+\}", "/{id}", u)
+        return u.rstrip("/")
+
+    norm_url = _norm(url)
+    url_segs = [s for s in norm_url.split("/") if s]
+
+    # Build normalised index
+    for candidate_url, val in mapping.items():
+        norm_cand = _norm(candidate_url)
+        if norm_cand == norm_url:
+            return val
+        # Match by last-2 segments (same endpoint, different version prefix)
+        cand_segs = [s for s in norm_cand.split("/") if s]
+        if len(url_segs) >= 2 and len(cand_segs) >= 2:
+            if url_segs[-2:] == cand_segs[-2:]:
+                return val
+
+    return empty
+
+
 def load_domain(domain_path):
     """
     Load ALL data for a domain by merging all 4 source files:
@@ -493,24 +547,17 @@ def load_domain(domain_path):
         url = ep["endpoint"]
 
         # ── Merge api.md (middleware, path params) ────────────────────────────
+        # Bug fix #2: use path-segment safe fuzzy match to avoid /bill matching /billing
         api_entry = api_info.get(url, {})
-        # Fuzzy match: try without version prefix differences
         if not api_entry:
-            for api_url, api_val in api_info.items():
-                if url and (url in api_url or api_url in url):
-                    api_entry = api_val
-                    break
+            api_entry = _url_fuzzy_match(url, api_info)
         ep["middleware"]  = api_entry.get("middleware", ep.get("auth","verify.internal.token"))
         ep["route_params"]= api_entry.get("params", "")
 
         # ── Merge legacy_query.sql ────────────────────────────────────────────
         sql_queries = sql_info.get(url, [])
         if not sql_queries:
-            # Fuzzy match on URL fragments
-            for sql_url, sql_val in sql_info.items():
-                if url and (url in sql_url or sql_url in url):
-                    sql_queries = sql_val
-                    break
+            sql_queries = _url_fuzzy_match(url, sql_info)  # returns [] if not found
         ep["sql_queries"]       = sql_queries
         ep["db_op_tables"]      = _sql_queries_to_text(sql_queries)
         ep["db_conditions"]     = _sql_conditions_to_text(sql_queries)
@@ -520,23 +567,41 @@ def load_domain(domain_path):
             ep["db_op_tables"] = ep["db_ops"]
 
         # ── Merge responses.md ────────────────────────────────────────────────
+        # Bug fix #3: removed positional fallback — it assigns wrong responses
         resp_entry = resp_map.get(url, {})
         if not resp_entry:
-            for resp_url, resp_val in resp_map.items():
-                if url and (url in resp_url or resp_url.endswith(url.split("/")[-1])):
-                    resp_entry = resp_val
-                    break
-        if not resp_entry and resp_map:
-            # Positional fallback: nth endpoint → nth response entry
-            vals = list(resp_map.values())
-            idx  = endpoints.index(ep)
-            resp_entry = vals[idx] if idx < len(vals) else vals[0]
+            matched_resp = _url_fuzzy_match(url, resp_map)
+            resp_entry = matched_resp if isinstance(matched_resp, dict) else {}
 
         ep["response_type"]   = resp_entry.get("response_type","")   or "json"
         ep["response_fields"] = resp_entry.get("fields_json","")     or "—"
         ep["response_example"]= resp_entry.get("example_json","")    or "—"
         ep["response_desc"]   = resp_entry.get("description","")     or "—"
         ep["response"]        = ep["response_fields"]   # backward compat
+
+        # ── Bug fix #5: extract External/Internal API calls as own field ──────
+        ext_api_full = ep.get("_ext_apis", "")
+        # Also scan business_logic text for internal service/API call patterns
+        bl = ep.get("business_logic", "")
+        internal_calls = []
+        for line in bl.splitlines():
+            ll = line.lower()
+            if any(kw in ll for kw in (
+                "calls another", "calls the", "calls an",
+                "internally calls", "uses the", "uses a",
+                "service class", "->service", "->repository", "->repo",
+                "fire()", "dispatch(", "queue(", "job(",
+                "sends an email", "notif",
+            )):
+                internal_calls.append(line.strip().lstrip("- ").strip())
+        combined_api_calls = ""
+        if ext_api_full and ext_api_full.lower() not in ("none", ""):
+            combined_api_calls += ext_api_full
+        if internal_calls:
+            if combined_api_calls:
+                combined_api_calls += "\n"
+            combined_api_calls += "\n".join(internal_calls)
+        ep["ext_internal_calls"] = combined_api_calls or "None"
 
     return endpoints
 
@@ -621,6 +686,7 @@ BE_COLUMNS = [
     ("DB Query\nDetails",              26),   # columns, aggregates, transaction, raw SQL
     # ── Side Effects ─────────────────────────────────────
     ("Side Effects",                   32),   # emails, jobs, events, ext APIs, files
+    ("External / Internal\nAPI Calls",  38),   # ext APIs + internal service/cross-API calls
     # ── Q&A ──────────────────────────────────────────────
     ("Open Questions",                 24),
     ("Answer / Decision",              24),
@@ -788,24 +854,25 @@ def build_backend_workbook(domains_data, domain_summary, today_str):
             _c(10, ep.get("db_conditions","—"),    bg=db_bg)
             _c(11, ep.get("db_details","—"),       bg=db_bg)
             # ── Side Effects ──────────────────────────────────────────────────
-            _c(12, ep.get("side_effects","None"),  bg=db_bg)
+            _c(12, ep.get("side_effects","None"),           bg=db_bg)
+            _c(13, ep.get("ext_internal_calls","None"),     bg=db_bg)
             # ── Q&A ───────────────────────────────────────────────────────────
-            _c(13, "")
-            _c(14, "", bg=C_ANSWER)
-            _c(15, "")
+            _c(14, "")
+            _c(15, "", bg=C_ANSWER)
             _c(16, "")
+            _c(17, "")
             # ── Response ──────────────────────────────────────────────────────
-            _c(17, ep.get("response_type","json"),  bg=C_STATUS, h="center")
-            _c(18, ep.get("response_fields","—"),   bg=C_RESPONSE)
-            _c(19, ep.get("response_example","—"),  bg=C_RESPONSE)
-            _c(20, ep.get("response_desc","—"),     bg=C_RESPONSE)
+            _c(18, ep.get("response_type","json"),  bg=C_STATUS, h="center")
+            _c(19, ep.get("response_fields","—"),   bg=C_RESPONSE)
+            _c(20, ep.get("response_example","—"),  bg=C_RESPONSE)
+            _c(21, ep.get("response_desc","—"),     bg=C_RESPONSE)
             # ── Status / Auth ─────────────────────────────────────────────────
-            _c(21, _be_status_codes(http),          bg=C_STATUS)
-            _c(22, ep.get("middleware","—") or ep.get("auth","—"))
+            _c(22, _be_status_codes(http),          bg=C_STATUS)
+            _c(23, ep.get("middleware","—") or ep.get("auth","—"))
             # ── Meta ──────────────────────────────────────────────────────────
-            _c(23, "—", bg=C_ROW_ODD, h="center")
-            _c(24, ep.get("controller","—"),        color=C_TEXT_GREY)
-            _c(25, today_str,                       h="center")
+            _c(24, "—", bg=C_ROW_ODD, h="center")
+            _c(25, ep.get("controller","—"),        color=C_TEXT_GREY)
+            _c(26, today_str,                       h="center")
             row_num  += 1
             glob_idx += 1
 
@@ -1127,6 +1194,27 @@ def build_frontend_workbook(fe_groups_data, today_str):
 # ──────────────────────────────────────────────────────────────────────────────
 
 def main():
+    # ── Parse CLI arguments ──────────────────────────────────────────────
+    global PROJECT_NAME, BACKEND_PATH, FRONTEND_PATH, OUTPUT_DIR
+    global BACKEND_OUTPUT, FRONTEND_OUTPUT
+    parser = argparse.ArgumentParser(
+        description="Build Excel docs from generated markdown.",
+        add_help=False,  # avoid conflicts when called from generate_excel()
+    )
+    parser.add_argument("--docs",    help="Path to docs/ folder (contains backend/ and frontend/)")
+    parser.add_argument("--project", help="Project name for titles and filenames")
+    parser.add_argument("--output",  help="Folder where .xlsx files are saved")
+    args, _ = parser.parse_known_args()
+    if args.project:
+        PROJECT_NAME = args.project
+    if args.docs:
+        BACKEND_PATH  = os.path.join(args.docs, "backend")
+        FRONTEND_PATH = os.path.join(args.docs, "frontend")
+    if args.output:
+        OUTPUT_DIR = args.output
+    BACKEND_OUTPUT  = os.path.join(OUTPUT_DIR, f"{PROJECT_NAME}_backend.xlsx")
+    FRONTEND_OUTPUT = os.path.join(OUTPUT_DIR, f"{PROJECT_NAME}_frontend.xlsx")
+
     today_str = datetime.today().strftime("%Y-%m-%d")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
